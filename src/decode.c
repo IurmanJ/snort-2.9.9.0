@@ -877,6 +877,7 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
 
     memset(p, 0, PKT_ZERO_LEN);
 
+
     p->pkth = pkthdr;
     p->pkt = pkt;
 
@@ -885,53 +886,90 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
                 (unsigned long)cap_len, (unsigned long)pkthdr->pktlen);
             );
 
-    while(true)
-    {
-    /* do a little validation */
-        if(rem_len < ETHERNET_HEADER_LEN)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-                "WARNING: Truncated eth header (%d bytes).\n", rem_len););
+    //Defined:
+        //HAVE_DAQ_FLOW_ID
+    	//HAVE_DAQ_HUP_APPLY
+        //HAVE_DAQ_DP_ADD_DC
+    	//HAVE_DAQ_ACQUIRE_WITH_META
+    	//HAVE_DAQ_ADDRESS_SPACE_ID
+    	//HAVE_DAQ_VERDICT_RETRY
 
-            if ( Event_Enabled(DECODE_ETH_HDR_TRUNC) )
-                DecoderEvent(p, EVARGS(ETH_HDR_TRUNC), 1, 1);
+	if (pkthdr->priv_ptr != NULL)
+	{
+		uint32_t flow_id = (uint32_t)(uintptr_t) pkthdr->flow_id;
+		printf("Decode packet with flow ID %u\n", flow_id);
 
-            pc.discards++;
-            pc.ethdisc++;
-            PREPROC_PROFILE_END(decodePerfStats);
-            return;
-        }
+		/*
+		 * DAQ notifies Snort not to perform all checks on headers
+		 */
+		while(true)
+		{
+			p->eh = (EtherHdr *) pkt;
 
-        /* lay the ethernet structure over the packet data */
-        p->eh = (EtherHdr *) pkt;
+			if(ntohs(p->eh->ether_type) == ETHERNET_TYPE_FPATH)
+			{
+				PushLayer(PROTO_FPATH, p, pkt, FABRICPATH_HEADER_LEN);
+				pkt += FABRICPATH_HEADER_LEN;
+				linklen += FABRICPATH_HEADER_LEN;
+				rem_len -= FABRICPATH_HEADER_LEN;
+			}
+			else
+				break;
+		}
+	}
+	else
+	{
+		/*
+		 * Normal behaviour: apply all checks on headers
+		 */
+		while(true)
+		{
+			/* do a little validation */
+			if(rem_len < ETHERNET_HEADER_LEN)
+			{
+				DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+					"WARNING: Truncated eth header (%d bytes).\n", rem_len););
 
-        /* check if this is a FabricPath header */
-        if(ntohs(p->eh->ether_type) == ETHERNET_TYPE_FPATH)
-        {
-            /* do a little validation */
-            if(rem_len < FABRICPATH_HEADER_LEN)
-            {
-                DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-                    "WARNING: Truncated FabricPath header (%d bytes).\n", rem_len););
+				if ( Event_Enabled(DECODE_ETH_HDR_TRUNC) )
+					DecoderEvent(p, EVARGS(ETH_HDR_TRUNC), 1, 1);
 
-                if ( Event_Enabled(DECODE_FPATH_HDR_TRUNC) )
-                    DecoderEvent(p, EVARGS(FPATH_HDR_TRUNC), 1, 1);
+				pc.discards++;
+				pc.ethdisc++;
+				PREPROC_PROFILE_END(decodePerfStats);
+				return;
+			}
 
-                pc.discards++;
-                PREPROC_PROFILE_END(decodePerfStats);
-                return;
-            }
-            /* strip FabricPath header*/
-            PushLayer(PROTO_FPATH, p, pkt, FABRICPATH_HEADER_LEN);
-            pkt += FABRICPATH_HEADER_LEN;
-            linklen += FABRICPATH_HEADER_LEN;
-            rem_len -= FABRICPATH_HEADER_LEN;
-        }
+			/* lay the ethernet structure over the packet data */
+			p->eh = (EtherHdr *) pkt;
 
+			/* check if this is a FabricPath header */
+			if(ntohs(p->eh->ether_type) == ETHERNET_TYPE_FPATH)
+			{
+				/* do a little validation */
+				if(rem_len < FABRICPATH_HEADER_LEN)
+				{
+					DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+						"WARNING: Truncated FabricPath header (%d bytes).\n", rem_len););
 
-        else
-            break;
-    }
+					if ( Event_Enabled(DECODE_FPATH_HDR_TRUNC) )
+						DecoderEvent(p, EVARGS(FPATH_HDR_TRUNC), 1, 1);
+
+					pc.discards++;
+					PREPROC_PROFILE_END(decodePerfStats);
+					return;
+				}
+
+				/* strip FabricPath header*/
+				PushLayer(PROTO_FPATH, p, pkt, FABRICPATH_HEADER_LEN);
+				pkt += FABRICPATH_HEADER_LEN;
+				linklen += FABRICPATH_HEADER_LEN;
+				rem_len -= FABRICPATH_HEADER_LEN;
+			}
+			else
+				break;
+		}
+	}
+
     PushLayer(PROTO_ETH, p, pkt, sizeof(*p->eh));
 
     DEBUG_WRAP(
@@ -946,6 +984,7 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
             DebugMessage(DEBUG_DECODE, "type:0x%X len:0x%X\n",
                 ntohs(p->eh->ether_type), p->pkth->pktlen)
             );
+
     DecodeEthTypes(p, p->pkt, ntohs(p->eh->ether_type), cap_len, linklen);
     PREPROC_PROFILE_END(decodePerfStats);
 }
@@ -2514,21 +2553,24 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
 
     DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Packet!\n"););
 
-    /* do a little validation */
-    if(len < IP_HEADER_LEN)
+    if (p->pkth->priv_ptr == NULL)
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "WARNING: Truncated IP4 header (%d bytes).\n", len););
+		/* do a little validation */
+		if(len < IP_HEADER_LEN)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"WARNING: Truncated IP4 header (%d bytes).\n", len););
 
-        if ( Event_Enabled(DECODE_IP4_HDR_TRUNC) && ((p->packet_flags & PKT_UNSURE_ENCAP) == 0))
-            DecoderEvent(p, EVARGS(IP4_HDR_TRUNC), 1, 1);
+			if ( Event_Enabled(DECODE_IP4_HDR_TRUNC) && ((p->packet_flags & PKT_UNSURE_ENCAP) == 0))
+				DecoderEvent(p, EVARGS(IP4_HDR_TRUNC), 1, 1);
 
-        p->iph = NULL;
-        p->family = NO_IP;
+			p->iph = NULL;
+			p->family = NO_IP;
 
-        pc.discards++;
-        pc.ipdisc++;
-        return;
+			pc.discards++;
+			pc.ipdisc++;
+			return;
+		}
     }
 
     if (p->family != NO_IP)
@@ -2578,105 +2620,107 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
     /* get the IP header length */
     hlen = IP_HLEN(p->iph) << 2;
 
-    /* header length sanity check */
-    if(hlen < IP_HEADER_LEN)
+    if (p->pkth->priv_ptr == NULL)
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "Bogus IP header length of %i bytes\n", hlen););
+		/* header length sanity check */
+		if(hlen < IP_HEADER_LEN)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"Bogus IP header length of %i bytes\n", hlen););
 
-        DecoderEvent(p, DECODE_IPV4_INVALID_HEADER_LEN,
-                        DECODE_IPV4_INVALID_HEADER_LEN_STR, 1, 1);
+			DecoderEvent(p, DECODE_IPV4_INVALID_HEADER_LEN,
+							DECODE_IPV4_INVALID_HEADER_LEN_STR, 1, 1);
 
-        p->iph = NULL;
-        p->family = NO_IP;
+			p->iph = NULL;
+			p->family = NO_IP;
 
-        pc.discards++;
-        pc.ipdisc++;
-        return;
-    }
+			pc.discards++;
+			pc.ipdisc++;
+			return;
+		}
 
-    if (ip_len > len)
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "IP Len field is %d bytes bigger than captured length.\n"
-            "    (ip.len: %lu, cap.len: %lu)\n",
-            ip_len - len, ip_len, len););
+		if (ip_len > len)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"IP Len field is %d bytes bigger than captured length.\n"
+				"    (ip.len: %lu, cap.len: %lu)\n",
+				ip_len - len, ip_len, len););
 
-        DecoderEventDrop(p, DECODE_IPV4_DGRAM_GT_CAPLEN,
-                            DECODE_IPV4_DGRAM_GT_CAPLEN_STR,
-                            ScDecoderOversizedAlerts(),
-                            ScDecoderOversizedDrops());
+			DecoderEventDrop(p, DECODE_IPV4_DGRAM_GT_CAPLEN,
+								DECODE_IPV4_DGRAM_GT_CAPLEN_STR,
+								ScDecoderOversizedAlerts(),
+								ScDecoderOversizedDrops());
 
-        p->iph = NULL;
-        p->family = NO_IP;
+			p->iph = NULL;
+			p->family = NO_IP;
 
-        pc.discards++;
-        pc.ipdisc++;
-        return;
-    }
+			pc.discards++;
+			pc.ipdisc++;
+			return;
+		}
 #if 0
-    // There is no need to alert when (ip_len < len).
-    // Libpcap will capture more bytes than are part of the IP payload.
-    // These could be Ethernet trailers, ESP trailers, etc.
-    // This code is left in, commented, to keep us from re-writing it later.
-    else if (ip_len < len)
-    {
-        if (ScLogVerbose())
-            ErrorMessage("IP Len field is %d bytes "
-                    "smaller than captured length.\n"
-                    "    (ip.len: %lu, cap.len: %lu)\n",
-                    len - ip_len, ip_len, len);
-    }
+		// There is no need to alert when (ip_len < len).
+		// Libpcap will capture more bytes than are part of the IP payload.
+		// These could be Ethernet trailers, ESP trailers, etc.
+		// This code is left in, commented, to keep us from re-writing it later.
+		else if (ip_len < len)
+		{
+			if (ScLogVerbose())
+				ErrorMessage("IP Len field is %d bytes "
+						"smaller than captured length.\n"
+						"    (ip.len: %lu, cap.len: %lu)\n",
+						len - ip_len, ip_len, len);
+		}
 #endif
 
-    if(ip_len < hlen)
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "IP dgm len (%d bytes) < IP hdr "
-            "len (%d bytes), packet discarded\n", ip_len, hlen););
+		if(ip_len < hlen)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"IP dgm len (%d bytes) < IP hdr "
+				"len (%d bytes), packet discarded\n", ip_len, hlen););
 
-        DecoderEvent(p, DECODE_IPV4_DGRAM_LT_IPHDR,
-                        DECODE_IPV4_DGRAM_LT_IPHDR_STR, 1, 1);
+			DecoderEvent(p, DECODE_IPV4_DGRAM_LT_IPHDR,
+							DECODE_IPV4_DGRAM_LT_IPHDR_STR, 1, 1);
 
-        p->iph = NULL;
-        p->family = NO_IP;
+			p->iph = NULL;
+			p->family = NO_IP;
 
-        pc.discards++;
-        pc.ipdisc++;
-        return;
-    }
+			pc.discards++;
+			pc.ipdisc++;
+			return;
+		}
 
-    /*
-     * IP Header tests: Land attack, and Loop back test
-     */
-    if(ScIdsMode())
-    {
-        IP4AddrTests(p);
-    }
+		/*
+		 * IP Header tests: Land attack, and Loop back test
+		 */
+		if(ScIdsMode())
+		{
+			IP4AddrTests(p);
+		}
 
+		if (ScIpChecksums())
+		{
+			/* routers drop packets with bad IP checksums, we don't really
+			 * need to check them (should make this a command line/config
+			 * option
+			 */
+			int16_t csum = in_chksum_ip((const unsigned short *)p->iph, hlen);
 
-    if (ScIpChecksums())
-    {
-        /* routers drop packets with bad IP checksums, we don't really
-         * need to check them (should make this a command line/config
-         * option
-         */
-        int16_t csum = in_chksum_ip((const unsigned short *)p->iph, hlen);
+			if(csum)
+			{
+				p->error_flags |= PKT_ERR_CKSUM_IP;
+				DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Bad IP checksum\n"););
 
-        if(csum)
-        {
-            p->error_flags |= PKT_ERR_CKSUM_IP;
-            DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Bad IP checksum\n"););
-
-            if ( ScIdsMode() )
-                queueExecDrop(execIpChksmDrop, p);
-        }
+				if ( ScIdsMode() )
+					queueExecDrop(execIpChksmDrop, p);
+			}
 #ifdef DEBUG_MSGS
-        else
-        {
-            DebugMessage(DEBUG_DECODE, "IP Checksum: OK\n");
-        }
+			else
+			{
+				DebugMessage(DEBUG_DECODE, "IP Checksum: OK\n");
+			}
 #endif /* DEBUG */
+		}
     }
 
     PushLayer(PROTO_IP4, p, pkt, hlen);
@@ -2778,6 +2822,7 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
         p->proto_bits |= PROTO_BIT__IP;
     }
 
+    //TODO: [JUSTIN] could be done in FastClick (?) but maybe too elaborate so keep it here ?
     IPMiscTests(p);
 
     /* if this packet isn't a fragment
@@ -5167,16 +5212,19 @@ void DecodeUDP(const uint8_t * pkt, const uint32_t len, Packet * p)
     if (p->proto_bits & (PROTO_BIT__TEREDO | PROTO_BIT__GTP))
         p->outer_udph = p->udph;
 
-    if(len < sizeof(UDPHdr))
+    if (p->pkth->priv_ptr == NULL)
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-                "Truncated UDP header (%d bytes)\n", len););
+		if(len < sizeof(UDPHdr))
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+					"Truncated UDP header (%d bytes)\n", len););
 
-        DecoderEvent(p, DECODE_UDP_DGRAM_LT_UDPHDR,
-                        DECODE_UDP_DGRAM_LT_UDPHDR_STR, 1, 1);
+			DecoderEvent(p, DECODE_UDP_DGRAM_LT_UDPHDR,
+							DECODE_UDP_DGRAM_LT_UDPHDR_STR, 1, 1);
 
-        PopUdp(p);
-        return;
+			PopUdp(p);
+			return;
+		}
     }
 
     /* set the ptr to the start of the UDP header */
@@ -5204,35 +5252,42 @@ void DecodeUDP(const uint8_t * pkt, const uint32_t len, Packet * p)
         fragmented_udp_flag = 1;
     }
 
-    /* verify that the header len is a valid value */
-    if(uhlen < UDP_HEADER_LEN)
+    if (p->pkth->priv_ptr == NULL)
     {
-        DecoderEvent(p, DECODE_UDP_DGRAM_INVALID_LENGTH,
-                        DECODE_UDP_DGRAM_INVALID_LENGTH_STR, 1, 1);
+		/* verify that the header len is a valid value */
+		if(uhlen < UDP_HEADER_LEN)
+		{
+			DecoderEvent(p, DECODE_UDP_DGRAM_INVALID_LENGTH,
+							DECODE_UDP_DGRAM_INVALID_LENGTH_STR, 1, 1);
 
-        PopUdp(p);
-        return;
+			PopUdp(p);
+			return;
+		}
+
+		/* make sure there are enough bytes as designated by length field */
+		if(uhlen > len)
+		{
+			DecoderEventDrop(p, DECODE_UDP_DGRAM_SHORT_PACKET,
+							 DECODE_UDP_DGRAM_SHORT_PACKET_STR,
+							 ScDecoderOversizedAlerts(),
+							 ScDecoderOversizedDrops());
+
+			PopUdp(p);
+			return;
+		}
+		else if(uhlen < len)
+		{
+			DecoderEvent(p, DECODE_UDP_DGRAM_LONG_PACKET,
+						 DECODE_UDP_DGRAM_LONG_PACKET_STR, 1, 1);
+
+			PopUdp(p);
+			return;
+		}
     }
 
-    /* make sure there are enough bytes as designated by length field */
-    if(uhlen > len)
-    {
-        DecoderEventDrop(p, DECODE_UDP_DGRAM_SHORT_PACKET,
-                         DECODE_UDP_DGRAM_SHORT_PACKET_STR,
-                         ScDecoderOversizedAlerts(),
-                         ScDecoderOversizedDrops());
-
-        PopUdp(p);
-        return;
-    }
-    else if(uhlen < len)
-    {
-        DecoderEvent(p, DECODE_UDP_DGRAM_LONG_PACKET,
-                     DECODE_UDP_DGRAM_LONG_PACKET_STR, 1, 1);
-
-        PopUdp(p);
-        return;
-    }
+	//TODO [JUSTIN]: udp checksum looks too elaborate to be included in FastClick, especially the last
+	//specific check about ESP and Teredo, so keep it here (?)
+	//Note: it doesn't look so greedy anyway...
 
     if (ScUdpChecksums())
     {
@@ -5348,7 +5403,8 @@ void DecodeUDP(const uint8_t * pkt, const uint32_t len, Packet * p)
         return;
     }
 
-    UDPMiscTests(p);
+    if (p->pkth->priv_ptr == NULL)
+    	UDPMiscTests(p);
 
     if (p->sp == TEREDO_PORT ||
         p->dp == TEREDO_PORT ||
