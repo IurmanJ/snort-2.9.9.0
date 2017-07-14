@@ -353,7 +353,7 @@ static void PrintUdpSession(UdpSession *us)
     LogMessage("    sender port:        %d\n", us->udp_sender_port);
     LogMessage("    responder port:        %d\n", us->udp_responder_port);
 
-    LogMessage("    flags:              0x%X\n", us->lwSsn->session_flags);
+    //LogMessage("    flags:              0x%X\n", us->lwSsn->session_flags);
 }
 #endif
 

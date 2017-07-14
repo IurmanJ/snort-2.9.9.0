@@ -44,7 +44,7 @@
 #include "sfPolicy.h"
 #include "sfPolicyUserData.h"
 
-//#define STREAM_DEBUG_ENABLED DEBUG
+#define STREAM_DEBUG_ENABLED DEBUG
 
 
 /* defaults and limits */
