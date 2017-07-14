@@ -877,7 +877,6 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
 
     memset(p, 0, PKT_ZERO_LEN);
 
-
     p->pkth = pkthdr;
     p->pkt = pkt;
 
@@ -886,13 +885,7 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
                 (unsigned long)cap_len, (unsigned long)pkthdr->pktlen);
             );
 
-    //Defined:
-        //HAVE_DAQ_FLOW_ID
-    	//HAVE_DAQ_HUP_APPLY
-        //HAVE_DAQ_DP_ADD_DC
-    	//HAVE_DAQ_ACQUIRE_WITH_META
-    	//HAVE_DAQ_ADDRESS_SPACE_ID
-    	//HAVE_DAQ_VERDICT_RETRY
+    printf("DecodeEthPkt\n");
 
 	if (pkthdr->priv_ptr != NULL)
 	{
