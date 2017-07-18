@@ -1451,8 +1451,8 @@ static int getActiveSessionCount(void *sessionCache)
 {
     SessionCache *session_cache = (SessionCache *) sessionCache;
 
-    if (session_cache &&session_cache->hashTable)
-        return session_cache->hashTable->count;
+    if (session_cache && session_cache->hashTable && session_cache->flowTable)
+        return session_cache->hashTable->count + session_cache->flowTable->count;
     else
         return 0;
 }
@@ -1778,9 +1778,9 @@ static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow
 
 	printf("NOT NULL -> search for it in linked list... ");
 	// TODO: ASC order "node->flow_id < flow_id"
-	while(node && node->flow_id != flow_id)
+	while(node && node->scb->flow_id != flow_id)
 	{
-		printf("flow %u, ", node->flow_id);
+		printf("flow %u, ", node->scb->flow_id);
 		node = node->next;
 	}
 
@@ -1822,7 +1822,7 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
     scb->flowdata = NULL;
 
     //TODO: clean up for "based on flow ID" type
-    if (scb->key == NULL)
+    if (scb->key == NULL && scb->flow_id > 0)
     	return SFXHASH_OK; //for now, avoid segfault when releasing below
 
     hnode = sfxhash_find_node(session_cache->hashTable, scb->key);
@@ -2267,8 +2267,14 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
     if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
     {
     	FlowTableNode* newNode = (FlowTableNode*)malloc(sizeof(FlowTableNode));
-		newNode->flow_id = p->pkth->flow_id;
-		newNode->scb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
+    	SessionControlBlock* newScb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
+
+    	//TODO: check if alloc went well
+
+    	newScb->flow_id = p->pkth->flow_id;
+
+		//newNode->flow_id = p->pkth->flow_id;
+		newNode->scb = newScb;
 
 		printf("Try to insert new flow ID %u at row index %u (%u/%u used)... ", p->pkth->flow_id, p->pkth->flow_id % session_cache->flowTable->size, session_cache->flowTable->count, session_cache->flowTable->size);
     	FlowTableNode* node = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];

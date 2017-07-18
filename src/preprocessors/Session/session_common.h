@@ -203,6 +203,7 @@ typedef struct _SessionControlBlock
 
     uint32_t proto_flags;
     uint32_t ftp_num_packets_normalized;
+    uint32_t flow_id;
 } SessionControlBlock;
 
 
