@@ -2690,6 +2690,22 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
             sessionCache->flowTable->count = 0;
             sessionCache->flowTable->size = flowtablesize;
 
+            printf("table[0] is... ");
+            if (sessionCache->flowTable->table[0] == NULL)
+            	printf("NULL\n");
+            else
+            	printf("not NULL\n");
+            printf("table[1] is... ");
+			if (sessionCache->flowTable->table[1] == NULL)
+				printf("NULL\n");
+			else
+				printf("not NULL\n");
+			printf("table[2] is... ");
+			if (sessionCache->flowTable->table[2] == NULL)
+				printf("NULL\n");
+			else
+				printf("not NULL\n");
+
             sfxhash_set_max_nodes( sessionCache->hashTable, max_sessions );
             sfxhash_set_keyops( sessionCache->hashTable, HashFunc, HashKeyCmp );
 
