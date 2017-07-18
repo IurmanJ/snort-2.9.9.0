@@ -2250,8 +2250,13 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 
     if (p->pkth->priv_ptr != NULL)
     {
-    	scb = calloc(1, sizeof(SessionControlBlock));
-    	session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = scb;
+    	//scb = calloc(1, sizeof(SessionControlBlock));
+    	FlowTableNode* ftn = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
+    	printf("FlowTableNode is %s NULL\n", ftn == NULL ? "" : "not");
+    	//ftn->flow_id = p->pkth->flow_id;
+    	//ftn->scb = scb;
+    	//ftn->next = NULL;
+    	//session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = scb;
     }
     else
     {
@@ -2675,7 +2680,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
 
             unsigned flowtablesize = 2;
             sessionCache->flowTable = (FlowTable*)malloc(sizeof(FlowTable));
-            sessionCache->flowTable->table = (FlowTableNode*)malloc(flowtablesize * sizeof(FlowTableNode));
+            sessionCache->flowTable->table = (FlowTableNode**)malloc(flowtablesize * sizeof(FlowTableNode*));
             sessionCache->flowTable->count = 0;
             sessionCache->flowTable->size = flowtablesize;
 

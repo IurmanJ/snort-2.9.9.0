@@ -51,7 +51,7 @@ typedef struct _FlowTable
 {
 	unsigned count;
 	unsigned size;
-	FlowTableNode *table;
+	struct _FlowTable **table;
 } FlowTable;
 
 typedef struct _SessionCache
