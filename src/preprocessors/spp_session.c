@@ -1768,20 +1768,29 @@ static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow
 	if( !sessionCache )
 		return NULL;
 
-	// TODO
+	printf("Lookup flow ID %u at row index %u (%u/%u used)... ", flow_id, flow_id % session_cache->flowTable->size, session_cache->flowTable->count, session_cache->flowTable->size);
 	FlowTableNode* node = session_cache->flowTable->table[flow_id % session_cache->flowTable->size];
 	if (node == NULL)
+	{
+		printf("NULL -> flow ID not found\n");
 		return NULL;
+	}
 
+	printf("NOT NULL -> search for it in linked list... ");
 	// TODO: ASC order "node->flow_id < flow_id"
 	while(node && node->flow_id != flow_id)
 	{
+		printf("flow %u, ", node->flow_id);
 		node = node->next;
 	}
 
 	if (node == NULL)
+	{
+		printf("end of the list -> flow ID not found\n");
 		return NULL;
+	}
 
+	printf("found !\n");
 	return node->scb;
 }
 
@@ -2261,19 +2270,20 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 		newNode->flow_id = p->pkth->flow_id;
 		newNode->scb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
 
+		printf("Try to insert new flow ID %u at row index %u (%u/%u used)... ", p->pkth->flow_id, p->pkth->flow_id % session_cache->flowTable->size, p->pkth->flow_id % session_cache->flowTable->count, p->pkth->flow_id % session_cache->flowTable->size);
     	FlowTableNode* node = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
     	if (node == NULL)
     	{
+    		printf("NULL -> insert directly (head of the linked list)\n");
     		newNode->next = NULL;
-    		node = newNode;
+    		session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = newNode;
     	}
     	else
     	{
+    		printf("NOT NULL -> insert at the beginning of the linked list\n");
     		// TODO: insert ASC in linked list
-    		newNode->next = NULL;
-    		while(node->next != NULL)
-    			node = node->next;
-    		node->next = newNode;
+    		newNode->next = node;
+    		session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = newNode;
     	}
 
     	session_cache->flowTable->count++;
