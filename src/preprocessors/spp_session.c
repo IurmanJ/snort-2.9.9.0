@@ -2270,7 +2270,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 		newNode->flow_id = p->pkth->flow_id;
 		newNode->scb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
 
-		printf("Try to insert new flow ID %u at row index %u (%u/%u used)... ", p->pkth->flow_id, p->pkth->flow_id % session_cache->flowTable->size, p->pkth->flow_id % session_cache->flowTable->count, p->pkth->flow_id % session_cache->flowTable->size);
+		printf("Try to insert new flow ID %u at row index %u (%u/%u used)... ", p->pkth->flow_id, p->pkth->flow_id % session_cache->flowTable->size, session_cache->flowTable->count, session_cache->flowTable->size);
     	FlowTableNode* node = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
     	if (node == NULL)
     	{
