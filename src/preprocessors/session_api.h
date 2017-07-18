@@ -302,7 +302,7 @@ typedef struct _session_api
            *   Session Flow ID
            *
            */
-	 void *(*get_session_by_flow_id)(void *, uint32_t);
+	 //void *(*get_session_by_flow_id)(void *, uint32_t);
 
      /* Create a new session
       *

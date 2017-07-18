@@ -213,7 +213,7 @@ SessionAPI session_api_dispatch_table = {
     /* .populate_session_key = */ populateSessionKey,
     /* .get_session_key_by_ip_port = */ initSessionKeyFromPktHeader,
     /* .get_session_by_key = */ getSessionControlBlockFromKey,
-	/* .get_session_by_flow_id = */ getSessionControlBlockFromFlowId,
+	///* .get_session_by_flow_id = */ getSessionControlBlockFromFlowId,
     /* .create_session = */ createSession,
     /* .is_session_verified = */ isSessionVerified,
     /* .remove_session_from_oneway_list = */ removeSessionFromProtoOneWayList,
@@ -1706,9 +1706,9 @@ static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *
     if( getSessionKey( p, key ) )
     {
     	// TODO: JUSTIN
-    	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
-    		scb = getSessionControlBlockFromFlowId( sessionCache, p->pkth->flow_id );
-    	else
+    	//if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    	//	scb = getSessionControlBlockFromFlowId( sessionCache, p->pkth->flow_id );
+    	//else
     		scb = getSessionControlBlockFromKey( sessionCache, key );
 
         if( scb != NULL )
@@ -2248,18 +2248,18 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
     if( sessionCache == NULL )
         return NULL;
 
-    if (p->pkth->priv_ptr != NULL)
-    {
+    //if (p->pkth->priv_ptr != NULL)
+    //{
     	//scb = calloc(1, sizeof(SessionControlBlock));
-    	FlowTableNode* ftn = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
-    	printf("FlowTableNode is %s NULL\n", ftn == NULL ? "" : "not");
+    	//FlowTableNode* ftn;// = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
+    	//printf("FlowTableNode is %s NULL\n", ftn == NULL ? "" : "not");
     	//ftn->flow_id = p->pkth->flow_id;
     	//ftn->scb = scb;
     	//ftn->next = NULL;
     	//session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = scb;
-    }
-    else
-    {
+    //}
+    //else
+    //{
 		hnode = sfxhash_get_node(session_cache->hashTable, key);
 		if (!hnode)
 		{
@@ -2282,75 +2282,81 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 #endif
 		}
 
-		scb = hnode->data;
+		if (hnode && hnode->data)
+		{
+			scb = hnode->data;
 
-		/* Zero everything out */
-		memset(scb, 0, sizeof(SessionControlBlock));
+			/* Zero everything out */
+			memset(scb, 0, sizeof(SessionControlBlock));
 
-		/* Save the session key for future use */
-		scb->key = hnode->key;
-    }
+			/* Save the session key for future use */
+			scb->key = hnode->key;
+		}
+    //}
 
-	scb->session_state = STREAM_STATE_NONE;
-	scb->session_established = false;
-	scb->protocol = key->protocol;
-	scb->last_data_seen = timestamp;
-	scb->flowdata = mempool_alloc(&sessionFlowMempool);
-	if( scb->flowdata )
-	{
-		flowdata = scb->flowdata->data;
-		boInitStaticBITOP(&(flowdata->boFlowbits), getFlowbitSizeInBytes(), flowdata->flowb);
-	}
+    if (scb)
+    {
+		scb->session_state = STREAM_STATE_NONE;
+		scb->session_established = false;
+		scb->protocol = key->protocol;
+		scb->last_data_seen = timestamp;
+		scb->flowdata = mempool_alloc(&sessionFlowMempool);
+		if( scb->flowdata )
+		{
+			flowdata = scb->flowdata->data;
+			boInitStaticBITOP(&(flowdata->boFlowbits), getFlowbitSizeInBytes(), flowdata->flowb);
+		}
 
-	scb->stream_config_stale = true;
-	scb->stream_config = NULL;
-	scb->proto_policy = NULL;
-	scb->napPolicyId = SF_POLICY_UNBOUND;
-	scb->ipsPolicyId = SF_POLICY_UNBOUND;
-	scb->session_config = session_configuration;
+		scb->stream_config_stale = true;
+		scb->stream_config = NULL;
+		scb->proto_policy = NULL;
+		scb->napPolicyId = SF_POLICY_UNBOUND;
+		scb->ipsPolicyId = SF_POLICY_UNBOUND;
+		scb->session_config = session_configuration;
 
-	scb->port_guess = true;
+		scb->port_guess = true;
 
 #ifdef MPLS
-	if( p != NULL )
-	{
-		uint8_t layerIndex;
-		for(layerIndex=0; layerIndex < p->next_layer; layerIndex++)
+		if( p != NULL )
 		{
-			 if( p->layers[layerIndex].proto == PROTO_MPLS && p->layers[layerIndex].start != NULL )
-			 {
-					initMplsHeaders(scb);
-					break;
-			 }
+			uint8_t layerIndex;
+			for(layerIndex=0; layerIndex < p->next_layer; layerIndex++)
+			{
+				 if( p->layers[layerIndex].proto == PROTO_MPLS && p->layers[layerIndex].start != NULL )
+				 {
+						initMplsHeaders(scb);
+						break;
+				 }
+			}
 		}
-	}
 #endif
 
 #ifdef ENABLE_HA
-	if (session_configuration->enable_ha)
-	{
-		scb->ha_flags |= HA_FLAG_NEW;
-		/* Calculate the threshold time for the first HA update message. */
-		packet_gettimeofday(&scb->ha_next_update);
-		if (session_configuration->ha_config)
+		if (session_configuration->enable_ha)
 		{
-			scb->ha_next_update.tv_usec += session_configuration->ha_config->min_session_lifetime.tv_usec;
-			if (scb->ha_next_update.tv_usec > 1000000)
+			scb->ha_flags |= HA_FLAG_NEW;
+			/* Calculate the threshold time for the first HA update message. */
+			packet_gettimeofday(&scb->ha_next_update);
+			if (session_configuration->ha_config)
 			{
-				scb->ha_next_update.tv_usec -= 1000000;
-				scb->ha_next_update.tv_sec++;
+				scb->ha_next_update.tv_usec += session_configuration->ha_config->min_session_lifetime.tv_usec;
+				if (scb->ha_next_update.tv_usec > 1000000)
+				{
+					scb->ha_next_update.tv_usec -= 1000000;
+					scb->ha_next_update.tv_sec++;
+				}
+				scb->ha_next_update.tv_sec += session_configuration->ha_config->min_session_lifetime.tv_sec;
 			}
-			scb->ha_next_update.tv_sec += session_configuration->ha_config->min_session_lifetime.tv_sec;
-		}
 
-		memset( &scb->ha_state, '\0', sizeof( StreamHAState ) );
-		scb->cached_ha_state = scb->ha_state;
-		scb->new_session = true;
-	}
+			memset( &scb->ha_state, '\0', sizeof( StreamHAState ) );
+			scb->cached_ha_state = scb->ha_state;
+			scb->new_session = true;
+		}
 #endif
 
-	// all sessions are one-way when created so add to oneway session list...
-	insertIntoOneWaySessionList( session_cache, scb );
+		// all sessions are one-way when created so add to oneway session list...
+		insertIntoOneWaySessionList( session_cache, scb );
+    }
 
     return scb;
 }
