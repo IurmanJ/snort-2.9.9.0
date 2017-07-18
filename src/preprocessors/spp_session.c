@@ -1807,6 +1807,8 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
     mempool_free(&sessionFlowMempool, scb->flowdata);
     scb->flowdata = NULL;
 
+    //TODO: clean up for "based on flow ID" type
+
     hnode = sfxhash_find_node(session_cache->hashTable, scb->key);
     if (!hnode)
         return SFXHASH_ERR;
