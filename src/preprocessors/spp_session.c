@@ -2707,7 +2707,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
 
             unsigned flowtablesize = 2;
             sessionCache->flowTable = (FlowTable*)malloc(sizeof(FlowTable));
-            sessionCache->flowTable->table = (FlowTableNode**)calloc(flowtablesize * sizeof(FlowTableNode*));
+            sessionCache->flowTable->table = (FlowTableNode**)calloc(flowtablesize, sizeof(FlowTableNode*));
             sessionCache->flowTable->count = 0;
             sessionCache->flowTable->size = flowtablesize;
 
