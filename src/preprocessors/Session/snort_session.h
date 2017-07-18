@@ -44,7 +44,7 @@ typedef struct _FlowTableNode
 {
 	uint32_t flow_id;
 	SessionControlBlock *scb;
-	FlowTableNode *next;
+	struct _FlowTableNode *next;
 } FlowTableNode;
 
 typedef struct _FlowTable
