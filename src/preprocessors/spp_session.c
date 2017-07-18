@@ -1306,6 +1306,7 @@ void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
 
 static inline SessionControlBlock *findPacketSessionControlBlock(SessionCache *sessionCache, Packet *p, SessionKey *key)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = NULL;
 
     scb = getSessionControlBlock(sessionCache, p, key);
@@ -1326,6 +1327,7 @@ static inline SessionControlBlock *findPacketSessionControlBlock(SessionCache *s
 
 static void sessionPacketProcessor(Packet *p, void *context)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = NULL;
     SessionKey key;
     uint32_t flags;
@@ -1493,6 +1495,7 @@ static int initSessionKeyFromPktHeader( sfaddr_t* srcIP,
         uint16_t addressSpaceId,
         SessionKey *key )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     uint16_t sport;
     uint16_t dport;
     sfaddr_t *src;
@@ -1610,6 +1613,7 @@ static int initSessionKeyFromPktHeader( sfaddr_t* srcIP,
 
 static int getSessionKey(Packet *p, SessionKey *key)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     char proto = GET_IPH_PROTO(p);
     uint32_t mplsId = 0;
     uint16_t vlanId = 0;
@@ -1694,11 +1698,17 @@ static void setPacketDirectionFlag(Packet *p, void *session)
 
 static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *key )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = NULL;
 
     if( getSessionKey( p, key ) )
     {
-        scb = getSessionControlBlockFromKey( sessionCache, key );
+    	// TODO: JUSTIN
+    	//if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    	//	scb = getSessionControlBlockFromFlowID( sessionTableCache, p->pkth->flow_id );
+    	//else
+    		scb = getSessionControlBlockFromKey( sessionCache, key );
+
         if( scb != NULL )
         {
             if( scb->last_data_seen < p->pkth->ts.tv_sec )
@@ -1711,6 +1721,7 @@ static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *
 
 static void populateSessionKey( Packet *p, SessionKey *key )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     uint16_t addressSpaceId = 0;
 
     if (!key || !p)
@@ -1726,6 +1737,7 @@ static void populateSessionKey( Packet *p, SessionKey *key )
 
 static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey *key )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionCache *session_cache = ( SessionCache * ) sessionCache;
     SessionControlBlock *scb = NULL;
     SFXHASH_NODE *hnode;
@@ -1765,6 +1777,7 @@ static void freeSessionApplicationData(void *session)
 
 static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SFXHASH_NODE *hnode;
 
     decrementPolicySessionRefCount( scb );
@@ -1783,6 +1796,7 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 
 static int deleteSessionByKey(void *session, char *delete_reason)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionCache *session_cache;
     SessionControlBlock *scb = ( SessionControlBlock  *) session;
 
@@ -2200,6 +2214,7 @@ static void initMplsHeaders(SessionControlBlock *scb)
 
 static void *createSession(void *sessionCache, Packet *p, const SessionKey *key )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionCache *session_cache = (SessionCache *) sessionCache;
     SessionControlBlock *scb = NULL;
     SFXHASH_NODE *hnode;
@@ -2536,6 +2551,7 @@ static int HashKeyCmp(const void *s1, const void *s2, size_t n)
 
 static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size, SessionCleanup cleanup_fcn)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     int hashTableSize;
     SessionCache *sessionCache = NULL;
     uint32_t max_sessions = 0, session_timeout_min = 0, session_timeout_max = 0;
@@ -2549,6 +2565,8 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 max_sessions = session_configuration->max_tcp_sessions;
                 session_timeout_min = session_configuration->tcp_cache_pruning_timeout;
                 session_timeout_max = session_configuration->tcp_cache_nominal_timeout;
+                if (max_sessions > 0)
+                	printf("%s: hashtable size is %d\n", "TCP", max_sessions);
             }
             break;
 
@@ -2558,6 +2576,8 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 max_sessions = session_configuration->max_udp_sessions;
                 session_timeout_min = session_configuration->udp_cache_pruning_timeout;
                 session_timeout_max = session_configuration->udp_cache_nominal_timeout;
+                if (max_sessions > 0)
+                	printf("%s: hashtable size is %d\n", "UDP", max_sessions);
             }
             break;
 
@@ -2576,6 +2596,8 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 max_sessions = session_configuration->max_ip_sessions;
                 session_timeout_min = 30;
                 session_timeout_max = 3 * session_timeout_min;
+                if (max_sessions > 0)
+                	printf("%s: hashtable size is %d\n", "IP", max_sessions);
             }
             break;
 
@@ -2820,6 +2842,7 @@ static void *getApplicationData( void *scbptr, uint32_t protocol )
 
 static inline void * getSessionHandle(const SessionKey *key)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb;
 
     switch(key->protocol)
@@ -2847,6 +2870,7 @@ static void *getSessionHandleFromIpPort( sfaddr_t* srcIP, uint16_t srcPort,
         char ip_protocol, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionKey key;
 
     initSessionKeyFromPktHeader(srcIP, srcPort, dstIP, dstPort, ip_protocol,
@@ -2857,11 +2881,13 @@ static void *getSessionHandleFromIpPort( sfaddr_t* srcIP, uint16_t srcPort,
 
 static const StreamSessionKey *getKeyFromSession( const void *scbptr )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     return ( ( SessionControlBlock * ) scbptr)->key;
 }
 
 static StreamSessionKey *getSessionKeyFromPacket( Packet *p )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionKey *key = calloc(1, sizeof(*key));
     uint16_t addressSpaceId = 0;
 
@@ -2881,6 +2907,7 @@ static StreamSessionKey *getSessionKeyFromPacket( Packet *p )
 
 static void * getApplicationDataFromSessionKey(const StreamSessionKey *key, uint32_t protocol)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = getSessionHandle(key);
     return getApplicationData(scb, protocol);
 }
@@ -3182,6 +3209,7 @@ static void dropTraffic( Packet* p, void *scbptr, char dir )
 
 static StreamFlowData *getFlowData( Packet *p )
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = ( SessionControlBlock * ) p->ssnptr;
 
     if ( ( scb == NULL ) || ( scb->flowdata == NULL ) )
