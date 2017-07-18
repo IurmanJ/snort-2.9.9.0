@@ -885,6 +885,13 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
                 (unsigned long)cap_len, (unsigned long)pkthdr->pktlen);
             );
 
+    printf("[%s] HA is ", __FUNCTION__);
+#ifdef ENABLE_HA
+    printf("enabled\n");
+#else
+    printf("disabled\n");
+#endif
+
 	if (pkthdr->priv_ptr != NULL)
 	{
 		uint32_t flow_id = (uint32_t)(uintptr_t) pkthdr->flow_id;
