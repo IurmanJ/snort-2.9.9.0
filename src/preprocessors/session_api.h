@@ -295,6 +295,15 @@ typedef struct _session_api
       */
      void *(*get_session_by_key)(void *, const SessionKey *);
 
+     /* Lookup by session flow ID and return Session Control Block
+           *
+           * Parameters
+           *   Session Cache (protocol specific)
+           *   Session Flow ID
+           *
+           */
+	 void *(*get_session_by_flow_id)(void *, uint32_t);
+
      /* Create a new session
       *
       * Parameters

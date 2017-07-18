@@ -40,9 +40,24 @@ struct oneway_sessions
     SessionControlBlock *tail;
 };
 
+typedef struct _FlowTableNode
+{
+	uint32_t flow_id;
+	SessionControlBlock *scb;
+	FlowTableNode *next;
+} FlowTableNode;
+
+typedef struct _FlowTable
+{
+	unsigned count;
+	unsigned size;
+	FlowTableNode **table;
+} FlowTable;
+
 typedef struct _SessionCache
 {
     SFXHASH *hashTable;
+    FlowTable *flowTable;
     SFXHASH_NODE *nextTimeoutEvalNode;
     uint32_t timeoutAggressive;
     uint32_t timeoutNominal;
