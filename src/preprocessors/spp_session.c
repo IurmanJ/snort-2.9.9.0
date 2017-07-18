@@ -1706,9 +1706,9 @@ static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *
     if( getSessionKey( p, key ) )
     {
     	// TODO: JUSTIN
-    	//if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
-    	//	scb = getSessionControlBlockFromFlowId( sessionCache, p->pkth->flow_id );
-    	//else
+    	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    		scb = getSessionControlBlockFromFlowId( sessionCache, p->pkth->flow_id );
+    	else
     		scb = getSessionControlBlockFromKey( sessionCache, key );
 
         if( scb != NULL )
@@ -1768,14 +1768,19 @@ static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow
 	if( !sessionCache )
 		return NULL;
 
+	// TODO
 	FlowTableNode* node = session_cache->flowTable->table[flow_id % session_cache->flowTable->size];
 	if (node == NULL)
 		return NULL;
 
-	while(node->flow_id != flow_id && node->next != NULL)
+	// TODO: ASC order "node->flow_id < flow_id"
+	while(node && node->flow_id != flow_id)
 	{
 		node = node->next;
 	}
+
+	if (node == NULL)
+		return NULL;
 
 	return node->scb;
 }
@@ -1808,6 +1813,8 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
     scb->flowdata = NULL;
 
     //TODO: clean up for "based on flow ID" type
+    if (scb->key == NULL)
+    	return SFXHASH_OK; //for now, avoid segfault when releasing below
 
     hnode = sfxhash_find_node(session_cache->hashTable, scb->key);
     if (!hnode)
@@ -2248,18 +2255,32 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
     if( sessionCache == NULL )
         return NULL;
 
-    //if (p->pkth->priv_ptr != NULL)
-    //{
-    	//scb = calloc(1, sizeof(SessionControlBlock));
-    	//FlowTableNode* ftn;// = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
-    	//printf("FlowTableNode is %s NULL\n", ftn == NULL ? "" : "not");
-    	//ftn->flow_id = p->pkth->flow_id;
-    	//ftn->scb = scb;
-    	//ftn->next = NULL;
-    	//session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = scb;
-    //}
-    //else
-    //{
+    if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    {
+    	FlowTableNode* newNode = (FlowTableNode*)malloc(sizeof(FlowTableNode));
+		newNode->flow_id = p->pkth->flow_id;
+		newNode->scb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
+
+    	FlowTableNode* node = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
+    	if (node == NULL)
+    	{
+    		newNode->next = NULL;
+    		node = newNode;
+    	}
+    	else
+    	{
+    		// TODO: insert ASC in linked list
+    		newNode->next = NULL;
+    		while(node->next != NULL)
+    			node = node->next;
+    		node->next = newNode;
+    	}
+
+    	session_cache->flowTable->count++;
+    	scb = newNode->scb;
+    }
+    else
+    {
 		hnode = sfxhash_get_node(session_cache->hashTable, key);
 		if (!hnode)
 		{
@@ -2292,7 +2313,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 			/* Save the session key for future use */
 			scb->key = hnode->key;
 		}
-    //}
+    }
 
     if (scb)
     {
@@ -2686,25 +2707,9 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
 
             unsigned flowtablesize = 2;
             sessionCache->flowTable = (FlowTable*)malloc(sizeof(FlowTable));
-            sessionCache->flowTable->table = (FlowTableNode**)malloc(flowtablesize * sizeof(FlowTableNode*));
+            sessionCache->flowTable->table = (FlowTableNode**)calloc(flowtablesize * sizeof(FlowTableNode*));
             sessionCache->flowTable->count = 0;
             sessionCache->flowTable->size = flowtablesize;
-
-            printf("table[0] is... ");
-            if (sessionCache->flowTable->table[0] == NULL)
-            	printf("NULL\n");
-            else
-            	printf("not NULL\n");
-            printf("table[1] is... ");
-			if (sessionCache->flowTable->table[1] == NULL)
-				printf("NULL\n");
-			else
-				printf("not NULL\n");
-			printf("table[2] is... ");
-			if (sessionCache->flowTable->table[2] == NULL)
-				printf("NULL\n");
-			else
-				printf("not NULL\n");
 
             sfxhash_set_max_nodes( sessionCache->hashTable, max_sessions );
             sfxhash_set_keyops( sessionCache->hashTable, HashFunc, HashKeyCmp );
