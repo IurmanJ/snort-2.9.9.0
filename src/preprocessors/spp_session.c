@@ -1329,7 +1329,6 @@ static inline SessionControlBlock *findPacketSessionControlBlock(SessionCache *s
 
 static void sessionPacketProcessor(Packet *p, void *context)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = NULL;
     SessionKey key;
     uint32_t flags;
@@ -1700,12 +1699,10 @@ static void setPacketDirectionFlag(Packet *p, void *session)
 
 static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *key )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = NULL;
 
     if( getSessionKey( p, key ) )
     {
-    	// TODO: JUSTIN
     	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
     		scb = getSessionControlBlockFromFlowId( sessionCache, p->pkth->flow_id );
     	else
@@ -1739,7 +1736,6 @@ static void populateSessionKey( Packet *p, SessionKey *key )
 
 static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey *key )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionCache *session_cache = ( SessionCache * ) sessionCache;
     SessionControlBlock *scb = NULL;
     SFXHASH_NODE *hnode;
@@ -1762,14 +1758,15 @@ static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey
 
 static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow_id)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
 	SessionCache *session_cache = ( SessionCache * ) sessionCache;
 
 	if( !sessionCache )
 		return NULL;
 
-	printf("Lookup flow ID %u at row index %u (%u/%u used)... ", flow_id, flow_id % session_cache->flowTable->size, session_cache->flowTable->count, session_cache->flowTable->size);
-	FlowTableNode* node = session_cache->flowTable->table[flow_id % session_cache->flowTable->size];
+	unsigned index = flow_id % session_cache->flowTable->size;
+	printf("Lookup flow ID %u at row index %u... ", flow_id, index);
+
+	FlowTableNode* node = session_cache->flowTable->table[index];
 	if (node == NULL)
 	{
 		printf("NULL -> flow ID not found\n");
@@ -2254,7 +2251,6 @@ static void initMplsHeaders(SessionControlBlock *scb)
 
 static void *createSession(void *sessionCache, Packet *p, const SessionKey *key )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionCache *session_cache = (SessionCache *) sessionCache;
     SessionControlBlock *scb = NULL;
     SFXHASH_NODE *hnode;
@@ -2266,30 +2262,30 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 
     if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
     {
-    	FlowTableNode* newNode = (FlowTableNode*)malloc(sizeof(FlowTableNode));
     	SessionControlBlock* newScb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
-
-    	//TODO: check if alloc went well
-
     	newScb->flow_id = p->pkth->flow_id;
 
-		//newNode->flow_id = p->pkth->flow_id;
-		newNode->scb = newScb;
+    	FlowTableNode* newNode = (FlowTableNode*)malloc(sizeof(FlowTableNode));
+    	newNode->scb = newScb;
 
-		printf("Try to insert new flow ID %u at row index %u (%u/%u used)... ", p->pkth->flow_id, p->pkth->flow_id % session_cache->flowTable->size, session_cache->flowTable->count, session_cache->flowTable->size);
-    	FlowTableNode* node = session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size];
+    	//TODO: check if allocs went well
+
+    	unsigned index = p->pkth->flow_id % session_cache->flowTable->size;
+
+		printf("Try to insert new flow ID %u at row index %u... ", p->pkth->flow_id, index);
+    	FlowTableNode* node = session_cache->flowTable->table[index];
     	if (node == NULL)
     	{
     		printf("NULL -> insert directly (head of the linked list)\n");
     		newNode->next = NULL;
-    		session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = newNode;
+    		session_cache->flowTable->table[index] = newNode;
     	}
     	else
     	{
     		printf("NOT NULL -> insert at the beginning of the linked list\n");
     		// TODO: insert ASC in linked list
     		newNode->next = node;
-    		session_cache->flowTable->table[p->pkth->flow_id % session_cache->flowTable->size] = newNode;
+    		session_cache->flowTable->table[index] = newNode;
     	}
 
     	session_cache->flowTable->count++;
@@ -2629,7 +2625,6 @@ static int HashKeyCmp(const void *s1, const void *s2, size_t n)
 
 static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size, SessionCleanup cleanup_fcn)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     int hashTableSize;
     SessionCache *sessionCache = NULL;
     uint32_t max_sessions = 0, session_timeout_min = 0, session_timeout_max = 0;
@@ -2643,8 +2638,6 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 max_sessions = session_configuration->max_tcp_sessions;
                 session_timeout_min = session_configuration->tcp_cache_pruning_timeout;
                 session_timeout_max = session_configuration->tcp_cache_nominal_timeout;
-                if (max_sessions > 0)
-                	printf("%s: hashtable size is %d\n", "TCP", max_sessions);
             }
             break;
 
@@ -2654,8 +2647,6 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 max_sessions = session_configuration->max_udp_sessions;
                 session_timeout_min = session_configuration->udp_cache_pruning_timeout;
                 session_timeout_max = session_configuration->udp_cache_nominal_timeout;
-                if (max_sessions > 0)
-                	printf("%s: hashtable size is %d\n", "UDP", max_sessions);
             }
             break;
 
@@ -2674,8 +2665,6 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 max_sessions = session_configuration->max_ip_sessions;
                 session_timeout_min = 30;
                 session_timeout_max = 3 * session_timeout_min;
-                if (max_sessions > 0)
-                	printf("%s: hashtable size is %d\n", "IP", max_sessions);
             }
             break;
 
@@ -2721,6 +2710,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                     //maxSessionMem + tableMem, 0, NULL, NULL, 1);
                 0, 0, NULL, NULL, 1 );
 
+            //TODO: check alloc went well
             unsigned flowtablesize = 2;
             sessionCache->flowTable = (FlowTable*)malloc(sizeof(FlowTable));
             sessionCache->flowTable->table = (FlowTableNode**)calloc(flowtablesize, sizeof(FlowTableNode*));
@@ -2965,8 +2955,13 @@ static void *getSessionHandleFromIpPort( sfaddr_t* srcIP, uint16_t srcPort,
 
 static const StreamSessionKey *getKeyFromSession( const void *scbptr )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
-    return ( ( SessionControlBlock * ) scbptr)->key;
+	SessionControlBlock* scb = (SessionControlBlock*)scbptr;
+
+	//TODO: maybe this function (as a handler) could be called in some cases (?)
+	if (scb->key == NULL && scb->flow_id > 0)
+		printf("[WARNING] call to %s will return a NULL key (scb from table flow) -> Fix it\n", __FUNCTION__);
+
+    return scb->key;
 }
 
 static StreamSessionKey *getSessionKeyFromPacket( Packet *p )
@@ -3293,7 +3288,6 @@ static void dropTraffic( Packet* p, void *scbptr, char dir )
 
 static StreamFlowData *getFlowData( Packet *p )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = ( SessionControlBlock * ) p->ssnptr;
 
     if ( ( scb == NULL ) || ( scb->flowdata == NULL ) )

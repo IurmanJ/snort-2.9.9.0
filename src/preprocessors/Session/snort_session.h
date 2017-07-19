@@ -42,7 +42,6 @@ struct oneway_sessions
 
 typedef struct _FlowTableNode
 {
-	//uint32_t flow_id;
 	SessionControlBlock *scb;
 	struct _FlowTableNode *next;
 } FlowTableNode;
