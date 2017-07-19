@@ -1758,38 +1758,6 @@ static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey
 
 static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow_id)
 {
-	/*SessionCache *session_cache = ( SessionCache * ) sessionCache;
-
-	if( !sessionCache )
-		return NULL;
-
-	unsigned index = flow_id % session_cache->flowTable->size;
-	printf("Lookup flow ID %u at row index %u... ", flow_id, index);
-
-	FlowTableNode* node = session_cache->flowTable->table[index];
-	if (node == NULL)
-	{
-		printf("NULL -> flow ID not found\n");
-		return NULL;
-	}
-
-	printf("NOT NULL -> search for it in linked list... ");
-	// TODO: ASC order "node->flow_id < flow_id"
-	while(node && node->scb->flow_id != flow_id)
-	{
-		printf("flow %u, ", node->scb->flow_id);
-		node = node->next;
-	}
-
-	if (node == NULL)
-	{
-		printf("end of the list -> flow ID not found\n");
-		return NULL;
-	}
-
-	printf("found !\n");
-	return node->scb;*/
-
 	SessionCache *session_cache = ( SessionCache * ) sessionCache;
 	SessionControlBlock *scb = NULL;
 	SFXHASH_NODE *hnode;
@@ -1797,8 +1765,8 @@ static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow
 	if( !sessionCache )
 		return NULL;
 
-	printf("[CALL] %s on flow ID %u... ", __FUNCTION__, flow_id);
-	hnode = sfxhash_find_node( session_cache->flowTable, (const void*)&flow_id );
+	printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, flow_id);
+	hnode = sfxhash_find_node( session_cache->flowTable, (void*)&flow_id );
 
 	if( hnode && hnode->data )
 	{
@@ -1836,15 +1804,25 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 	printf("[CALL] %s\n", __FUNCTION__);
 	SFXHASH *table;
     SFXHASH_NODE *hnode;
+    const void *key;
 
     decrementPolicySessionRefCount( scb );
 
     mempool_free(&sessionFlowMempool, scb->flowdata);
     scb->flowdata = NULL;
 
-    table = (scb->is_in_flow_table) ? session_cache->flowTable : session_cache->hashTable;
+    if (scb->flow_id > 0)
+    {
+    	table = session_cache->flowTable;
+    	key = &(scb->flow_id);
+    }
+    else
+    {
+    	table = session_cache->hashTable;
+    	key = scb->key;
+    }
 
-    hnode = sfxhash_find_node(table, scb->key);
+    hnode = sfxhash_find_node(table, key);
     if (!hnode)
         return SFXHASH_ERR;
     if (session_cache->nextTimeoutEvalNode == hnode)
@@ -2276,6 +2254,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 	SFXHASH *table;
 	SessionControlBlock *scb = NULL;
 	SFXHASH_NODE *hnode;
+	void *ptrKey;
 	StreamFlowData *flowdata;
 	bool hasFlowId;
 	time_t timestamp = p ? p->pkth->ts.tv_sec : packet_time();
@@ -2285,17 +2264,19 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
 	{
-		printf("[CALL] %s on flow ID %u... ", __FUNCTION__, p->pkth->flow_id);
+		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, p->pkth->flow_id);
 		table = session_cache->flowTable;
+		ptrKey = &(p->pkth->flow_id);
 		hasFlowId = true;
 	}
 	else
 	{
 		table = session_cache->hashTable;
+		ptrKey = key;
 		hasFlowId = false;
 	}
 
-	hnode = sfxhash_get_node(table, key);
+	hnode = sfxhash_get_node(table, ptrKey);
 	if (!hnode)
 	{
 		DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "HashTable full, clean One Way Sessions.\n"););
@@ -2310,28 +2291,32 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		}
 
 		/* Should have some freed nodes now */
-		hnode = sfxhash_get_node(table, key);
+		hnode = sfxhash_get_node(table, ptrKey);
 #ifdef DEBUG_MSGS
 		if (!hnode)
 			LogMessage("%s(%d) Problem, no freed nodes\n", __FILE__, __LINE__);
 #endif
 	}
 
-	if (!hnode || !hnode->data)
-		printf("NOK\n");
-	else
-	//if (hnode && hnode->data)
+	if (hnode && hnode->data)
 	{
-		printf("OK\n");
 		scb = hnode->data;
 
 		/* Zero everything out */
 		memset(scb, 0, sizeof(SessionControlBlock));
 
 		/* Save the session key for future use */
-		scb->key = hnode->key;
+		if (hasFlowId)
+		{
+			assert(p->pkth->flow_id == *(uint32_t*)hnode->key);
 
-		scb->is_in_flow_table = (hasFlowId) ? true : false;
+			memcpy(scb->key, key, sizeof(SessionKey));
+			scb->flow_id = p->pkth->flow_id;
+		}
+		else
+		{
+			scb->key = hnode->key;
+		}
 
 		scb->session_state = STREAM_STATE_NONE;
 		scb->session_established = false;
@@ -2397,151 +2382,6 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	return scb;
 }
-
-/*static void *createSession2(void *sessionCache, Packet *p, const SessionKey *key )
-{
-    SessionCache *session_cache = (SessionCache *) sessionCache;
-    SessionControlBlock *scb = NULL;
-    SFXHASH_NODE *hnode;
-    StreamFlowData *flowdata;
-    time_t timestamp = p ? p->pkth->ts.tv_sec : packet_time();
-
-    if( sessionCache == NULL )
-        return NULL;
-
-    if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
-    {
-    	SessionControlBlock* newScb = (SessionControlBlock*)calloc(1, sizeof(SessionControlBlock));
-    	newScb->flow_id = p->pkth->flow_id;
-
-    	FlowTableNode* newNode = (FlowTableNode*)malloc(sizeof(FlowTableNode));
-    	newNode->scb = newScb;
-
-    	//TODO: check if allocs went well
-
-    	unsigned index = p->pkth->flow_id % session_cache->flowTable->size;
-
-		printf("Try to insert new flow ID %u at row index %u... ", p->pkth->flow_id, index);
-    	FlowTableNode* node = session_cache->flowTable->table[index];
-    	if (node == NULL)
-    	{
-    		printf("NULL -> insert directly (head of the linked list)\n");
-    		newNode->next = NULL;
-    		session_cache->flowTable->table[index] = newNode;
-    	}
-    	else
-    	{
-    		printf("NOT NULL -> insert at the beginning of the linked list\n");
-    		// TODO: insert ASC in linked list
-    		newNode->next = node;
-    		session_cache->flowTable->table[index] = newNode;
-    	}
-
-    	session_cache->flowTable->count++;
-    	scb = newNode->scb;
-    }
-    else
-    {
-		hnode = sfxhash_get_node(session_cache->hashTable, key);
-		if (!hnode)
-		{
-			DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "HashTable full, clean One Way Sessions.\n"););
-			if( pruneOneWaySessions( session_cache ) == 0 )
-			{
-				DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "No One Way Sessions, clean timedout sessions.\n"););
-				if( pruneSessionCache(session_cache, timestamp, NULL, 0) == 0 )
-				{
-					DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "No timedout sessions, clean least recently used.\n"););
-					pruneSessionCache(session_cache, 0, NULL, 0);
-				}
-			}*/
-
-			/* Should have some freed nodes now */
-			/*hnode = sfxhash_get_node(session_cache->hashTable, key);
-#ifdef DEBUG_MSGS
-			if (!hnode)
-				LogMessage("%s(%d) Problem, no freed nodes\n", __FILE__, __LINE__);
-#endif
-		}
-
-		if (hnode && hnode->data)
-		{
-			scb = hnode->data;*/
-
-			/* Zero everything out */
-			/*memset(scb, 0, sizeof(SessionControlBlock));*/
-
-			/* Save the session key for future use */
-			/*scb->key = hnode->key;
-		}
-    }
-
-    if (scb)
-    {
-		scb->session_state = STREAM_STATE_NONE;
-		scb->session_established = false;
-		scb->protocol = key->protocol;
-		scb->last_data_seen = timestamp;
-		scb->flowdata = mempool_alloc(&sessionFlowMempool);
-		if( scb->flowdata )
-		{
-			flowdata = scb->flowdata->data;
-			boInitStaticBITOP(&(flowdata->boFlowbits), getFlowbitSizeInBytes(), flowdata->flowb);
-		}
-
-		scb->stream_config_stale = true;
-		scb->stream_config = NULL;
-		scb->proto_policy = NULL;
-		scb->napPolicyId = SF_POLICY_UNBOUND;
-		scb->ipsPolicyId = SF_POLICY_UNBOUND;
-		scb->session_config = session_configuration;
-
-		scb->port_guess = true;
-
-#ifdef MPLS
-		if( p != NULL )
-		{
-			uint8_t layerIndex;
-			for(layerIndex=0; layerIndex < p->next_layer; layerIndex++)
-			{
-				 if( p->layers[layerIndex].proto == PROTO_MPLS && p->layers[layerIndex].start != NULL )
-				 {
-						initMplsHeaders(scb);
-						break;
-				 }
-			}
-		}
-#endif
-
-#ifdef ENABLE_HA
-		if (session_configuration->enable_ha)
-		{
-			scb->ha_flags |= HA_FLAG_NEW;*/
-			/* Calculate the threshold time for the first HA update message. */
-			/*packet_gettimeofday(&scb->ha_next_update);
-			if (session_configuration->ha_config)
-			{
-				scb->ha_next_update.tv_usec += session_configuration->ha_config->min_session_lifetime.tv_usec;
-				if (scb->ha_next_update.tv_usec > 1000000)
-				{
-					scb->ha_next_update.tv_usec -= 1000000;
-					scb->ha_next_update.tv_sec++;
-				}
-				scb->ha_next_update.tv_sec += session_configuration->ha_config->min_session_lifetime.tv_sec;
-			}
-
-			memset( &scb->ha_state, '\0', sizeof( StreamHAState ) );
-			scb->cached_ha_state = scb->ha_state;
-			scb->new_session = true;
-		}
-#endif
-
-		// all sessions are one-way when created so add to oneway session list...
-		insertIntoOneWaySessionList( session_cache, scb );
-    }
-
-    return scb;
-}*/
 
 static bool isSessionVerified( void *ssn )
 {
@@ -2878,19 +2718,12 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
             sfxhash_set_max_nodes( sessionCache->hashTable, max_sessions );
             sfxhash_set_keyops( sessionCache->hashTable, HashFunc, HashKeyCmp );
 
-            //=================================
-            sessionCache->flowTable = sfxhash_new( /*hashTableSize*/2, sizeof(uint32_t), sizeof(SessionControlBlock),
+            /* Create the flow table for packets received with aggregate flow ID */
+            sessionCache->flowTable = sfxhash_new( hashTableSize, sizeof(uint32_t), sizeof(SessionControlBlock),
             	0, 0, NULL, NULL, 1 );
 
-            sfxhash_set_max_nodes( sessionCache->flowTable, /*max_sessions*/2 );
+            sfxhash_set_max_nodes( sessionCache->flowTable, max_sessions );
             sfxhash_set_keyops( sessionCache->flowTable, HashFlowIdFunc, HashFlowIdCmp );
-
-            /*unsigned flowtablesize = 2;
-            sessionCache->flowTable = (FlowTable*)malloc(sizeof(FlowTable));
-            sessionCache->flowTable->table = (FlowTableNode**)calloc(flowtablesize, sizeof(FlowTableNode*));
-            sessionCache->flowTable->count = 0;
-            sessionCache->flowTable->size = flowtablesize;*/
-            //=================================
 
             // now alloc and initial memory for protocol specific session blocks
             if( protocol_scb_size > 0 )
