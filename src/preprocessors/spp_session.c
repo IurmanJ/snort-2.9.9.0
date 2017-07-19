@@ -2276,7 +2276,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 	else
 	{
 		table = session_cache->hashTable;
-		ptrKey = key;
+		ptrKey = (void*)key;
 		hasFlowId = false;
 	}
 
