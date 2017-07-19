@@ -2326,6 +2326,8 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 			scb->key = hnode->key;
 		}
 
+		printf("OK (after 1)\n");
+
 		scb->session_state = STREAM_STATE_NONE;
 		scb->session_established = false;
 		scb->protocol = key->protocol;
@@ -2336,6 +2338,8 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 			flowdata = scb->flowdata->data;
 			boInitStaticBITOP(&(flowdata->boFlowbits), getFlowbitSizeInBytes(), flowdata->flowb);
 		}
+
+		printf("OK (after 2)\n");
 
 		scb->stream_config_stale = true;
 		scb->stream_config = NULL;
@@ -2386,7 +2390,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 		// all sessions are one-way when created so add to oneway session list...
 		insertIntoOneWaySessionList( session_cache, scb );
-		printf("OK (after)\n");
+		printf("OK (after 3)\n");
 	}
 
 	return scb;
