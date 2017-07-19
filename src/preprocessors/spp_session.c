@@ -2280,9 +2280,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		hasFlowId = false;
 	}
 
-	printf("before searching...\n");
 	hnode = sfxhash_get_node(table, ptrKey);
-	printf("after searching...\n");
 	if (!hnode)
 	{
 		DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "HashTable full, clean One Way Sessions.\n"););
@@ -2306,7 +2304,6 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (hnode && hnode->data)
 	{
-		printf("OK (before)\n");
 		scb = hnode->data;
 
 		/* Zero everything out */
@@ -2316,17 +2313,22 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		if (hasFlowId)
 		{
 			assert(flowId == *(uint32_t*)hnode->key);
+			assert(flowId != *(uint32_t*)hnode->key);
+
+			assert(sizeof(scb->key) == sizeof(uint32_t));
+			assert(sizeof(scb->key) == sizeof(SessionKey));
+
 			printf("%u == %u ? %s\n", flowId, *(uint32_t*)hnode->key, (flowId == *(uint32_t*)hnode->key) ? "true" : "false");
 
 			memcpy(scb->key, key, sizeof(SessionKey));
 			scb->flow_id = flowId;
+
+			printf("OK\n");
 		}
 		else
 		{
 			scb->key = hnode->key;
 		}
-
-		printf("OK (after 1)\n");
 
 		scb->session_state = STREAM_STATE_NONE;
 		scb->session_established = false;
@@ -2338,8 +2340,6 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 			flowdata = scb->flowdata->data;
 			boInitStaticBITOP(&(flowdata->boFlowbits), getFlowbitSizeInBytes(), flowdata->flowb);
 		}
-
-		printf("OK (after 2)\n");
 
 		scb->stream_config_stale = true;
 		scb->stream_config = NULL;
@@ -2390,7 +2390,6 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 		// all sessions are one-way when created so add to oneway session list...
 		insertIntoOneWaySessionList( session_cache, scb );
-		printf("OK (after 3)\n");
 	}
 
 	return scb;
