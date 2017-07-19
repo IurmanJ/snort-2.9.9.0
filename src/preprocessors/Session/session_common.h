@@ -188,6 +188,8 @@ typedef struct _SessionControlBlock
     bool    in_oneway_list;
     bool    is_session_deletion_delayed;
 
+    bool	is_in_flow_table;
+
     // pointers for linking into list of oneway sessions
     struct _SessionControlBlock *ows_prev;
     struct _SessionControlBlock *ows_next;
@@ -203,7 +205,7 @@ typedef struct _SessionControlBlock
 
     uint32_t proto_flags;
     uint32_t ftp_num_packets_normalized;
-    uint32_t flow_id;
+    //uint32_t flow_id;
 } SessionControlBlock;
 
 
