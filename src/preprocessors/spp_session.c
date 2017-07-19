@@ -1797,6 +1797,7 @@ static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow
 	if( !sessionCache )
 		return NULL;
 
+	printf("[CALL] %s on flow ID %u... ", __FUNCTION__, flow_id);
 	hnode = sfxhash_find_node( session_cache->flowTable, (const void*)&flow_id );
 
 	if( hnode && hnode->data )
@@ -1805,7 +1806,10 @@ static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow
 		 * same key before returning this node.
 		 */
 		scb = ( SessionControlBlock * ) hnode->data;
+		printf("FOUND !\n");
 	}
+	else
+		printf("NOT FOUND !\n");
 
 	return scb;
 }
@@ -2281,6 +2285,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
 	{
+		printf("[CALL] %s on flow ID %u... ", __FUNCTION__, p->pkth->flow_id);
 		table = session_cache->flowTable;
 		hasFlowId = true;
 	}
@@ -2312,8 +2317,12 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 #endif
 	}
 
-	if (hnode && hnode->data)
+	if (!hnode || !hnode->data)
+		printf("NOK\n");
+	else
+	//if (hnode && hnode->data)
 	{
+		printf("OK\n");
 		scb = hnode->data;
 
 		/* Zero everything out */
@@ -2598,6 +2607,7 @@ static void *allocateProtocolSession( uint32_t protocol )
 
 static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 {
+	printf("[CALL] %s on key %u\n", __FUNCTION__, *(uint32_t*)d);
 	return *(uint32_t*)d;
 }
 
@@ -2653,6 +2663,7 @@ static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
 
 static int HashFlowIdCmp(const void *s1, const void *s2, size_t n)
 {
+	printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, *(uint32_t*)s1, *(uint32_t*)s2);
 	uint32_t *a, *b;
 
 	a = (uint32_t*)s1;
