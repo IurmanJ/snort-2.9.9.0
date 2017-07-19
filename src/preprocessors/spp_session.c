@@ -2313,8 +2313,8 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		if (hasFlowId)
 		{
 			printf("flowId (%u) == hnode->key (%u) ? %s\n", flowId, *(uint32_t*)hnode->key, (flowId == *(uint32_t*)hnode->key) ? "true" : "false");
-			printf("key (size %u) == uint32_t (size %u) ? %s\n", sizeof(scb->key), sizeof(uint32_t), (sizeof(scb->key) == sizeof(uint32_t)) ? "true" : "false");
-			printf("key (size %u) == SessionKey (size %u) ? %s\n", sizeof(scb->key), sizeof(SessionKey), (sizeof(scb->key) == sizeof(SessionKey)) ? "true" : "false");
+			printf("key (size %lu) == uint32_t (size %lu) ? %s\n", sizeof(scb->key), sizeof(uint32_t), (sizeof(scb->key) == sizeof(uint32_t)) ? "true" : "false");
+			printf("key (size %lu) == SessionKey (size %lu) ? %s\n", sizeof(scb->key), sizeof(SessionKey), (sizeof(scb->key) == sizeof(SessionKey)) ? "true" : "false");
 
 			memcpy(scb->key, key, sizeof(SessionKey));
 			scb->flow_id = flowId;
