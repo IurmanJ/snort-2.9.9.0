@@ -1830,6 +1830,7 @@ static void freeSessionApplicationData(void *session)
 static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 {
 	printf("[CALL] %s\n", __FUNCTION__);
+	SFXHASH *table;
     SFXHASH_NODE *hnode;
 
     decrementPolicySessionRefCount( scb );
@@ -1837,17 +1838,15 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
     mempool_free(&sessionFlowMempool, scb->flowdata);
     scb->flowdata = NULL;
 
-    //TODO: clean up for "based on flow ID" type
-    if (scb->key == NULL && scb->flow_id > 0)
-    	return SFXHASH_OK; //for now, avoid segfault when releasing below
+    table = (scb->is_in_flow_table) ? session_cache->flowTable : session_cache->hashTable;
 
-    hnode = sfxhash_find_node(session_cache->hashTable, scb->key);
+    hnode = sfxhash_find_node(table, scb->key);
     if (!hnode)
         return SFXHASH_ERR;
     if (session_cache->nextTimeoutEvalNode == hnode)
         session_cache->nextTimeoutEvalNode = NULL;
 
-    return sfxhash_free_node(session_cache->hashTable, hnode);
+    return sfxhash_free_node(table, hnode);
 }
 
 static int deleteSessionByKey(void *session, char *delete_reason)
@@ -2599,7 +2598,7 @@ static void *allocateProtocolSession( uint32_t protocol )
 
 static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 {
-	return (uint32_t*)d;
+	return *(uint32_t*)d;
 }
 
 static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
@@ -2656,10 +2655,10 @@ static int HashFlowIdCmp(const void *s1, const void *s2, size_t n)
 {
 	uint32_t *a, *b;
 
-	a = (uint32_t)s1;
-	b = (uint32_t)s2;
+	a = (uint32_t*)s1;
+	b = (uint32_t*)s2;
 
-	return !(a == b);
+	return !(*a == *b);
 }
 
 static int HashKeyCmp(const void *s1, const void *s2, size_t n)
@@ -3119,11 +3118,10 @@ static const StreamSessionKey *getKeyFromSession( const void *scbptr )
 {
 	SessionControlBlock* scb = (SessionControlBlock*)scbptr;
 
-	//TODO: maybe this function (as a handler) could be called in some cases (?)
-	if (scb->key == NULL && scb->flow_id > 0)
-		printf("[WARNING] call to %s will return a NULL key (scb from table flow) -> Fix it\n", __FUNCTION__);
+	if (scb == NULL)
+		return NULL;
 
-    return scb->key;
+	return scb->key;
 }
 
 static StreamSessionKey *getSessionKeyFromPacket( Packet *p )
