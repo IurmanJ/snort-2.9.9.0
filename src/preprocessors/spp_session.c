@@ -2255,6 +2255,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 	SessionControlBlock *scb = NULL;
 	SFXHASH_NODE *hnode;
 	void *ptrKey;
+	uint32_t flowId;
 	StreamFlowData *flowdata;
 	bool hasFlowId;
 	time_t timestamp = p ? p->pkth->ts.tv_sec : packet_time();
@@ -2264,10 +2265,13 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
 	{
-		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, p->pkth->flow_id);
-		table = session_cache->flowTable;
-		ptrKey = &(p->pkth->flow_id);
+		flowId = p->pkth->flow_id;
 		hasFlowId = true;
+
+		table = session_cache->flowTable;
+		ptrKey = (void*)&flowId;
+
+		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, flowId);
 	}
 	else
 	{
@@ -2276,7 +2280,9 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		hasFlowId = false;
 	}
 
+	printf("before searching...\n");
 	hnode = sfxhash_get_node(table, ptrKey);
+	printf("after searching...\n");
 	if (!hnode)
 	{
 		DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "HashTable full, clean One Way Sessions.\n"););
@@ -2300,6 +2306,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (hnode && hnode->data)
 	{
+		printf("OK (before)\n");
 		scb = hnode->data;
 
 		/* Zero everything out */
@@ -2308,10 +2315,11 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		/* Save the session key for future use */
 		if (hasFlowId)
 		{
-			assert(p->pkth->flow_id == *(uint32_t*)hnode->key);
+			assert(flowId == *(uint32_t*)hnode->key);
+			printf("%u == %u ? %s\n", flowId, *(uint32_t*)hnode->key, (flowId == *(uint32_t*)hnode->key) ? "true" : "false");
 
 			memcpy(scb->key, key, sizeof(SessionKey));
-			scb->flow_id = p->pkth->flow_id;
+			scb->flow_id = flowId;
 		}
 		else
 		{
@@ -2378,6 +2386,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 		// all sessions are one-way when created so add to oneway session list...
 		insertIntoOneWaySessionList( session_cache, scb );
+		printf("OK (after)\n");
 	}
 
 	return scb;
