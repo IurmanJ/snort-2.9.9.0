@@ -2484,7 +2484,6 @@ static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
         b += tmp;   /* mpls label */
     }
     offset += 8;    /* skip past vlan/proto/ipver & mpls label */
-    printf("MPLS is defined\n");
 #else
     offset += 4;    /* skip past vlan/proto/ipver */
 #endif
