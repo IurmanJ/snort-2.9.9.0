@@ -2456,8 +2456,9 @@ static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 	//SessionKey *key = (SessionKey*)d;
 	//printf("[CALL] %s on key %u\n", __FUNCTION__, key->flow_id);
 	//return key->flow_id;
+	uint32_t garbage = *(uint32_t*)(d+44); //addr space id + pad
 	uint32_t flowId = *(uint32_t*)(d+48);
-	printf("[CALL] %s on key %u\n", __FUNCTION__, flowId);
+	printf("[CALL] %s on key %u (%u)\n", __FUNCTION__, flowId, garbage);
 	return flowId;
 }
 
@@ -2507,6 +2508,8 @@ static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
     c += tmp2; /* address space id and 16bits of zero'd pad */
 #endif
     final(a,b,c);
+
+    printf("flow_id at offset %u (should be 48)\n", offset+4);
 
     return c;
 }
