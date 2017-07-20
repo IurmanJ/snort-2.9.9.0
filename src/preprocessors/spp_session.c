@@ -1745,21 +1745,21 @@ static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey
     if( !sessionCache )
         return NULL;
 
-    printf("[%s] searching in %s...\n", __FUNCTION__, (key->flow_id > 0) ? "flow table" : "hash table");
+    //printf("[%s] searching in %s...\n", __FUNCTION__, (key->flow_id > 0) ? "flow table" : "hash table");
 
     table = (key->flow_id > 0) ? session_cache->flowTable : session_cache->hashTable;
 
     hnode = sfxhash_find_node( table, key );
     if( hnode && hnode->data )
     {
-    	printf("FOUND !\n");
+    	//printf("FOUND !\n");
         /* This is a unique hnode, since the sfxhash finds the
          * same key before returning this node.
          */
         scb = ( SessionControlBlock * ) hnode->data;
     }
     else
-    	printf("NOT FOUND !\n");
+    	//printf("NOT FOUND !\n");
 
     return scb;
 }
@@ -1783,7 +1783,6 @@ static void freeSessionApplicationData(void *session)
 
 static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
 	SFXHASH *table;
     SFXHASH_NODE *hnode;
 
@@ -1808,7 +1807,6 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 
 static int deleteSessionByKey(void *session, char *delete_reason)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionCache *session_cache;
     SessionControlBlock *scb = ( SessionControlBlock  *) session;
 
@@ -1835,7 +1833,6 @@ static int deleteSessionByKey(void *session, char *delete_reason)
 
 static int deleteSession(void *sessionCache, void *session, char *delete_reason)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     sfaddr_t client_ip;
     sfaddr_t server_ip;
     uint16_t client_port;
@@ -2273,7 +2270,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
 	{
 		table = session_cache->flowTable;
-		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, key->flow_id);
+		//printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, key->flow_id);
 	}
 	else
 	{
@@ -2314,7 +2311,6 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		/* Save the session key for future use */
 		if (scb->key->flow_id > 0)
 		{
-			printf("OK (%s)\n", scb->is_in_flow_table ? "true" : "false");
 			scb->is_in_flow_table = true;
 		}
 		else
@@ -2457,9 +2453,12 @@ static void *allocateProtocolSession( uint32_t protocol )
 
 static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 {
-	SessionKey *key = (SessionKey*)d;
-	printf("[CALL] %s on key %u\n", __FUNCTION__, key->flow_id);
-	return key->flow_id;
+	//SessionKey *key = (SessionKey*)d;
+	//printf("[CALL] %s on key %u\n", __FUNCTION__, key->flow_id);
+	//return key->flow_id;
+	uint32_t flowId = *(uint32_t*)(d+48);
+	printf("[CALL] %s on key %u\n", __FUNCTION__, flowId);
+	return flowId;
 }
 
 static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
