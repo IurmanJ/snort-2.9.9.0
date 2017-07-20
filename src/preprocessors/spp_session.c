@@ -124,7 +124,6 @@ static int initSessionKeyFromPktHeader( sfaddr_t* srcIP, uint16_t srcPort, sfadd
         uint16_t dstPort, char proto, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId, SessionKey *key);
 static void *getSessionControlBlockFromKey(void *, const SessionKey *);
-static void *getSessionControlBlockFromFlowId(void *, uint32_t);
 static void *createSession(void *, Packet *, const SessionKey * );
 static bool isSessionVerified( void * );
 static void removeSessionFromProtoOneWayList(uint32_t proto, void *scb);
@@ -213,7 +212,6 @@ SessionAPI session_api_dispatch_table = {
     /* .populate_session_key = */ populateSessionKey,
     /* .get_session_key_by_ip_port = */ initSessionKeyFromPktHeader,
     /* .get_session_by_key = */ getSessionControlBlockFromKey,
-	///* .get_session_by_flow_id = */ getSessionControlBlockFromFlowId,
     /* .create_session = */ createSession,
     /* .is_session_verified = */ isSessionVerified,
     /* .remove_session_from_oneway_list = */ removeSessionFromProtoOneWayList,
@@ -1308,7 +1306,6 @@ void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
 
 static inline SessionControlBlock *findPacketSessionControlBlock(SessionCache *sessionCache, Packet *p, SessionKey *key)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = NULL;
 
     scb = getSessionControlBlock(sessionCache, p, key);
@@ -1496,7 +1493,6 @@ static int initSessionKeyFromPktHeader( sfaddr_t* srcIP,
         uint16_t addressSpaceId,
         SessionKey *key )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     uint16_t sport;
     uint16_t dport;
     sfaddr_t *src;
@@ -1609,17 +1605,18 @@ static int initSessionKeyFromPktHeader( sfaddr_t* srcIP,
     key->addressSpaceId = 0;
 #endif
     key->addressSpaceIdPad1 = 0;
+    key->flow_id = 0;
     return 1;
 }
 
 static int getSessionKey(Packet *p, SessionKey *key)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     char proto = GET_IPH_PROTO(p);
     uint32_t mplsId = 0;
     uint16_t vlanId = 0;
     uint16_t sport = p->sp;
     uint16_t addressSpaceId = 0;
+    int ret;
 # ifdef MPLS
     if (ScMplsOverlappingIp() && (p->mpls != NULL))
     {
@@ -1637,8 +1634,13 @@ static int getSessionKey(Packet *p, SessionKey *key)
         /* ICMP */
         sport = p->icmph->type;
     }
-    return initSessionKeyFromPktHeader(GET_SRC_IP(p), sport, GET_DST_IP(p), p->dp,
+    ret = initSessionKeyFromPktHeader(GET_SRC_IP(p), sport, GET_DST_IP(p), p->dp,
             proto, vlanId, mplsId, addressSpaceId, key);
+
+    if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    	key->flow_id = p->pkth->flow_id;
+
+    return ret;
 }
 
 static inline void determinePacketDirection( Packet *p, uint16_t p_port, uint16_t scb_port, int is_sport )
@@ -1703,10 +1705,7 @@ static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *
 
     if( getSessionKey( p, key ) )
     {
-    	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
-    		scb = getSessionControlBlockFromFlowId( sessionCache, p->pkth->flow_id );
-    	else
-    		scb = getSessionControlBlockFromKey( sessionCache, key );
+    	scb = getSessionControlBlockFromKey( sessionCache, key );
 
         if( scb != NULL )
         {
@@ -1720,7 +1719,6 @@ static void *getSessionControlBlock( void *sessionCache, Packet *p, SessionKey *
 
 static void populateSessionKey( Packet *p, SessionKey *key )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     uint16_t addressSpaceId = 0;
 
     if (!key || !p)
@@ -1732,54 +1730,38 @@ static void populateSessionKey( Packet *p, SessionKey *key )
 
     initSessionKeyFromPktHeader( GET_SRC_IP( p ), p->sp, GET_DST_IP( p ), p->dp,
             GET_IPH_PROTO( p ), p->vh ? VTH_VLAN( p->vh ) : 0, p->mplsHdr.label, addressSpaceId, key);
+
+    if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    	key->flow_id = p->pkth->flow_id;
 }
 
 static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey *key )
 {
     SessionCache *session_cache = ( SessionCache * ) sessionCache;
     SessionControlBlock *scb = NULL;
+    SFXHASH *table;
     SFXHASH_NODE *hnode;
 
     if( !sessionCache )
         return NULL;
 
-    hnode = sfxhash_find_node( session_cache->hashTable, key );
+    printf("[%s] searching in %s...\n", __FUNCTION__, (key->flow_id > 0) ? "flow table" : "hash table");
 
+    table = (key->flow_id > 0) ? session_cache->flowTable : session_cache->hashTable;
+
+    hnode = sfxhash_find_node( table, key );
     if( hnode && hnode->data )
     {
+    	printf("FOUND !\n");
         /* This is a unique hnode, since the sfxhash finds the
          * same key before returning this node.
          */
         scb = ( SessionControlBlock * ) hnode->data;
     }
+    else
+    	printf("NOT FOUND !\n");
 
     return scb;
-}
-
-static void *getSessionControlBlockFromFlowId( void *sessionCache, uint32_t flow_id)
-{
-	SessionCache *session_cache = ( SessionCache * ) sessionCache;
-	SessionControlBlock *scb = NULL;
-	SFXHASH_NODE *hnode;
-
-	if( !sessionCache )
-		return NULL;
-
-	printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, flow_id);
-	hnode = sfxhash_find_node( session_cache->flowTable, (void*)&flow_id );
-
-	if( hnode && hnode->data )
-	{
-		/* This is a unique hnode, since the sfxhash finds the
-		 * same key before returning this node.
-		 */
-		scb = ( SessionControlBlock * ) hnode->data;
-		printf("FOUND !\n");
-	}
-	else
-		printf("NOT FOUND !\n");
-
-	return scb;
 }
 
 static void freeSessionApplicationData(void *session)
@@ -1804,25 +1786,18 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
 	printf("[CALL] %s\n", __FUNCTION__);
 	SFXHASH *table;
     SFXHASH_NODE *hnode;
-    const void *key;
 
     decrementPolicySessionRefCount( scb );
 
     mempool_free(&sessionFlowMempool, scb->flowdata);
     scb->flowdata = NULL;
 
-    if (scb->flow_id > 0)
-    {
+    if (scb->is_in_flow_table)
     	table = session_cache->flowTable;
-    	key = &(scb->flow_id);
-    }
     else
-    {
     	table = session_cache->hashTable;
-    	key = scb->key;
-    }
 
-    hnode = sfxhash_find_node(table, key);
+    hnode = sfxhash_find_node(table, scb->key);
     if (!hnode)
         return SFXHASH_ERR;
     if (session_cache->nextTimeoutEvalNode == hnode)
@@ -1860,6 +1835,7 @@ static int deleteSessionByKey(void *session, char *delete_reason)
 
 static int deleteSession(void *sessionCache, void *session, char *delete_reason)
 {
+	printf("[CALL] %s\n", __FUNCTION__);
     sfaddr_t client_ip;
     sfaddr_t server_ip;
     uint16_t client_port;
@@ -1980,6 +1956,25 @@ static int purgeSessionCache(void *sessionCache)
         retCount++;
     }
 
+    //[JUSTIN] there is no way to know here at runtime if it's for hashtable or flowtable so we apply it on both
+    /* Remove all sessions from the hash table. */
+	hnode = sfxhash_mru_node(session_cache->flowTable);
+	while (hnode)
+	{
+		idx = (SessionControlBlock *)hnode->data;
+		if (!idx)
+		{
+			sfxhash_free_node(session_cache->flowTable, hnode);
+		}
+		else
+		{
+			idx->ha_state.session_flags |= SSNFLAG_PRUNED;
+			deleteSession(session_cache, idx, "purge whole cache");
+		}
+		hnode = sfxhash_mru_node(session_cache->flowTable);
+		retCount++;
+	}
+
     session_cache->flags &= ~SESSION_CACHE_FLAG_PURGING;
 
     return retCount;
@@ -2002,6 +1997,8 @@ static int deleteSessionCache( uint32_t protocol )
         free( session_cache->protocol_session_pool );
 
         sfxhash_delete( session_cache->hashTable );
+        sfxhash_delete( session_cache->flowTable );
+
         free( session_cache );
         proto_session_caches[ protocol ] = NULL;
     }
@@ -2042,10 +2039,10 @@ static int pruneOneWaySessions( SessionCache *session_cache )
     return num_pruned;
 }
 
-static bool prune_more_sessions( SessionCache *session_cache, uint32_t num_pruned,
+static bool prune_more_sessions( SFXHASH *table, uint32_t num_pruned,
         uint32_t prune_stop_threshold, int memCheck )
 {
-    unsigned int session_count = sfxhash_count(session_cache->hashTable);
+    unsigned int session_count = sfxhash_count(table);
 
     if( session_count < 1 )
         return false;
@@ -2056,12 +2053,12 @@ static bool prune_more_sessions( SessionCache *session_cache, uint32_t num_prune
         return session_mem_in_use > GetSessionMemCap();
 }
 
-static void moveHashNodeToFront( SessionCache *session_cache )
+static void moveHashNodeToFront( SFXHASH *table )
 {
     SFXHASH_NODE *lastNode;
 
-    lastNode = sfxhash_lru_node(session_cache->hashTable);
-    sfxhash_gmovetofront(session_cache->hashTable, lastNode);
+    lastNode = sfxhash_lru_node(table);
+    sfxhash_gmovetofront(table, lastNode);
 }
 static ThrottleInfo error_throttleInfo = {0,60,0};
 
@@ -2069,6 +2066,7 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
 {
     SessionControlBlock *save_me = ( SessionControlBlock  * ) save_me_session;
     SessionCache *session_cache = ( SessionCache * ) sessionCache;
+    SFXHASH *table = session_cache->hashTable;
     SessionControlBlock *scb;
     uint32_t pruned = 0;
 
@@ -2078,12 +2076,19 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
     {
         /* Pruning, look for sessions that have time'd out */
         bool got_one;
-        scb = ( SessionControlBlock * ) sfxhash_lru( session_cache->hashTable );
+        scb = ( SessionControlBlock * ) sfxhash_lru( table );
 
         if( scb == NULL )
         {
-            Active_Resume();
-            return 0;
+        	/* Should be a prune request for flow table */
+        	table = session_cache->flowTable;
+        	scb = ( SessionControlBlock * ) sfxhash_lru( table );
+
+        	if ( scb == NULL )
+        	{
+				Active_Resume();
+				return 0;
+        	}
         }
 
         do
@@ -2091,9 +2096,9 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
             got_one = false;
             if( scb == save_me )
             {
-                SFXHASH_NODE *lastNode = sfxhash_lru_node( session_cache->hashTable );
-                sfxhash_gmovetofront( session_cache->hashTable, lastNode );
-                lastNode = sfxhash_lru_node( session_cache->hashTable );
+                SFXHASH_NODE *lastNode = sfxhash_lru_node( table );
+                sfxhash_gmovetofront( table, lastNode );
+                lastNode = sfxhash_lru_node( table );
                 if( ( lastNode ) && ( lastNode->data != scb ) )
                 {
                     scb = ( SessionControlBlock * ) lastNode->data;
@@ -2112,13 +2117,13 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
             {
                 SessionControlBlock *savscb = scb;
 
-                if(sfxhash_count(session_cache->hashTable) > 1)
+                if(sfxhash_count(table) > 1)
                 {
                     DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "pruning stale session\n"););
                     savscb->ha_state.session_flags |= SSNFLAG_TIMEDOUT;
                     deleteSession(session_cache, savscb, "stale/timeout");
 
-                    scb = (SessionControlBlock *) sfxhash_lru(session_cache->hashTable);
+                    scb = (SessionControlBlock *) sfxhash_lru(table);
                     pruned++;
                     got_one = true;
                 }
@@ -2156,7 +2161,12 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
          * enough sessions to be able to create new ones.
          */
         uint32_t prune_stop_threshold = session_cache->max_sessions - session_cache->cleanup_sessions;
-        while( prune_more_sessions( session_cache, pruned, prune_stop_threshold, memCheck ) )
+
+        // if hash table empty, should be for flow table
+        if (sfxhash_count(table) < 1)
+        	table = session_cache->flowTable;
+
+        while( prune_more_sessions( table, pruned, prune_stop_threshold, memCheck ) )
         {
             unsigned int blocks = 0;
             DEBUG_WRAP( DebugMessage(DEBUG_STREAM,
@@ -2166,16 +2176,16 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
                         session_mem_in_use,
                         GetSessionMemCap() ););
 
-            scb = (SessionControlBlock *) sfxhash_lru(session_cache->hashTable);
+            scb = (SessionControlBlock *) sfxhash_lru(table);
 
             if( scb == NULL )
                 break;
 
             if( scb == save_me )
             {
-                if(sfxhash_count(session_cache->hashTable) == 1)
+                if(sfxhash_count(table) == 1)
                     break;
-                moveHashNodeToFront( session_cache );
+                moveHashNodeToFront( table );
                 continue;
             }
 
@@ -2183,10 +2193,10 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
             {
                 if ( isSessionBlocked( scb ) )
                 {
-                    if( ++blocks >= sfxhash_count( session_cache->hashTable ) )
+                    if( ++blocks >= sfxhash_count( table ) )
                         break;
 
-                    moveHashNodeToFront( session_cache );
+                    moveHashNodeToFront( table );
                     continue;
                 }
                 else
@@ -2211,10 +2221,10 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
     if( memCheck && pruned )
     {
 	ErrorMessageThrottled(&error_throttleInfo,"S5: Pruned %d sessions from cache for memcap. %d scbs remain. memcap: %d/%d\n",
-                    pruned, sfxhash_count( session_cache->hashTable ),
+                    pruned, sfxhash_count( table ),
                     session_mem_in_use,
                     GetSessionMemCap() );
-        DEBUG_WRAP( if( sfxhash_count(session_cache->hashTable) == 1 )
+        DEBUG_WRAP( if( sfxhash_count(table) == 1 )
                     {
                         DebugMessage(DEBUG_STREAM, "S5: Pruned, one session remains\n");
                     } );
@@ -2254,10 +2264,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 	SFXHASH *table;
 	SessionControlBlock *scb = NULL;
 	SFXHASH_NODE *hnode;
-	void *ptrKey;
-	uint32_t flowId;
 	StreamFlowData *flowdata;
-	bool hasFlowId;
 	time_t timestamp = p ? p->pkth->ts.tv_sec : packet_time();
 
 	if( sessionCache == NULL )
@@ -2265,22 +2272,21 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
 	{
-		flowId = p->pkth->flow_id;
-		hasFlowId = true;
+		// if called from the outside (handler), make sure key has flow id set
+		key->flow_id = p->pkth->flow_id;
 
 		table = session_cache->flowTable;
-		ptrKey = (void*)&flowId;
-
-		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, flowId);
+		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, key->flow_id);
 	}
 	else
 	{
+		// should be OK but force key flow id to 0 anyway
+		key->flow_id = 0;
+
 		table = session_cache->hashTable;
-		ptrKey = (void*)key;
-		hasFlowId = false;
 	}
 
-	hnode = sfxhash_get_node(table, ptrKey);
+	hnode = sfxhash_get_node(table, key);
 	if (!hnode)
 	{
 		DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "HashTable full, clean One Way Sessions.\n"););
@@ -2295,7 +2301,7 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		}
 
 		/* Should have some freed nodes now */
-		hnode = sfxhash_get_node(table, ptrKey);
+		hnode = sfxhash_get_node(table, key);
 #ifdef DEBUG_MSGS
 		if (!hnode)
 			LogMessage("%s(%d) Problem, no freed nodes\n", __FILE__, __LINE__);
@@ -2309,21 +2315,17 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		/* Zero everything out */
 		memset(scb, 0, sizeof(SessionControlBlock));
 
+		scb->key = hnode->key;
+
 		/* Save the session key for future use */
-		if (hasFlowId)
+		if (scb->key->flow_id > 0)
 		{
-			printf("flowId (%u) == hnode->key (%u) ? %s\n", flowId, *(uint32_t*)hnode->key, (flowId == *(uint32_t*)hnode->key) ? "true" : "false");
-			printf("key (size %lu) == uint32_t* (size %lu) ? %s\n", sizeof(scb->key), sizeof(uint32_t*), (sizeof(scb->key) == sizeof(uint32_t*)) ? "true" : "false");
-			printf("key (size %lu) == SessionKey* (size %lu) ? %s\n", sizeof(scb->key), sizeof(SessionKey*), (sizeof(scb->key) == sizeof(SessionKey*)) ? "true" : "false");
-
-			//memcpy(scb->key, key, sizeof(SessionKey));
-			scb->flow_id = flowId;
-
-			printf("OK\n");
+			printf("OK (%s)\n", scb->is_in_flow_table ? "true" : "false");
+			scb->is_in_flow_table = true;
 		}
 		else
 		{
-			scb->key = hnode->key;
+			scb->is_in_flow_table = false;
 		}
 
 		scb->session_state = STREAM_STATE_NONE;
@@ -2455,8 +2457,9 @@ static void *allocateProtocolSession( uint32_t protocol )
 
 static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 {
-	printf("[CALL] %s on key %u\n", __FUNCTION__, *(uint32_t*)d);
-	return *(uint32_t*)d;
+	SessionKey *key = (SessionKey*)d;
+	printf("[CALL] %s on key %u\n", __FUNCTION__, key->flow_id);
+	return key->flow_id;
 }
 
 static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
@@ -2511,13 +2514,11 @@ static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
 
 static int HashFlowIdCmp(const void *s1, const void *s2, size_t n)
 {
-	printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, *(uint32_t*)s1, *(uint32_t*)s2);
-	uint32_t *a, *b;
+	SessionKey *a = (SessionKey*)s1;
+	SessionKey *b = (SessionKey*)s2;
 
-	a = (uint32_t*)s1;
-	b = (uint32_t*)s2;
-
-	return !(*a == *b);
+	printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, a->flow_id, b->flow_id);
+	return !(a->flow_id == b->flow_id);
 }
 
 static int HashKeyCmp(const void *s1, const void *s2, size_t n)
@@ -2727,7 +2728,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
             sfxhash_set_keyops( sessionCache->hashTable, HashFunc, HashKeyCmp );
 
             /* Create the flow table for packets received with aggregate flow ID */
-            sessionCache->flowTable = sfxhash_new( hashTableSize, sizeof(uint32_t), sizeof(SessionControlBlock),
+            sessionCache->flowTable = sfxhash_new( hashTableSize, sizeof(SessionKey), sizeof(SessionControlBlock),
             	0, 0, NULL, NULL, 1 );
 
             sfxhash_set_max_nodes( sessionCache->flowTable, max_sessions );
@@ -2763,22 +2764,26 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
 static void printSessionCache(void *sessionCache)
 {
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "%lu sessions active\n",
-                sfxhash_count( ( ( SessionCache * ) sessionCache )->hashTable ) ););
+                sfxhash_count( ( ( SessionCache * ) sessionCache )->hashTable )
+				+ sfxhash_count( ( ( SessionCache * ) sessionCache )->flowTable ) ););
 }
 
 static void checkCacheFlowTimeout(uint32_t flowCount, time_t cur_time, SessionCache *cache)
 {
     uint32_t flowRetiredCount = 0, flowExaminedCount = 0;
     SessionControlBlock *scb;
+    SFXHASH *table;
     SFXHASH_NODE *hnode, *hnode_prev;
 
     if( !cache )
         return;
 
+    table = (sfxhash_count(cache->hashTable) < 1) ? cache->flowTable : cache->hashTable;
+
     hnode_prev = cache->nextTimeoutEvalNode;
     while( flowRetiredCount < flowCount && flowExaminedCount < ( 2 * flowCount ) )
     {
-        if( !( hnode = hnode_prev ) && !( hnode = sfxhash_lru_node( cache->hashTable ) ) )
+        if( !( hnode = hnode_prev ) && !( hnode = sfxhash_lru_node( table ) ) )
             break;
 
         scb = ( SessionControlBlock * ) hnode->data;
@@ -2929,7 +2934,6 @@ static void *getApplicationData( void *scbptr, uint32_t protocol )
 
 static inline void * getSessionHandle(const SessionKey *key)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb;
 
     switch(key->protocol)
@@ -2957,7 +2961,6 @@ static void *getSessionHandleFromIpPort( sfaddr_t* srcIP, uint16_t srcPort,
         char ip_protocol, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionKey key;
 
     initSessionKeyFromPktHeader(srcIP, srcPort, dstIP, dstPort, ip_protocol,
@@ -2978,7 +2981,6 @@ static const StreamSessionKey *getKeyFromSession( const void *scbptr )
 
 static StreamSessionKey *getSessionKeyFromPacket( Packet *p )
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionKey *key = calloc(1, sizeof(*key));
     uint16_t addressSpaceId = 0;
 
@@ -2993,12 +2995,14 @@ static StreamSessionKey *getSessionKeyFromPacket( Packet *p )
             p->vh ? VTH_VLAN(p->vh) : 0,
             p->mplsHdr.label, addressSpaceId, key);
 
+    if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+    	key->flow_id = p->pkth->flow_id;
+
     return key;
 }
 
 static void * getApplicationDataFromSessionKey(const StreamSessionKey *key, uint32_t protocol)
 {
-	printf("[CALL] %s\n", __FUNCTION__);
     SessionControlBlock *scb = getSessionHandle(key);
     return getApplicationData(scb, protocol);
 }

@@ -164,6 +164,7 @@ typedef struct _StreamSessionKey
     uint32_t   mplsLabel; /* MPLS label */
     uint16_t   addressSpaceId;
     uint16_t   addressSpaceIdPad1;
+    uint32_t   flow_id;
 /* XXX If this data structure changes size, HashKeyCmp must be updated! */
 } StreamSessionKey;
 
@@ -294,15 +295,6 @@ typedef struct _session_api
       *
       */
      void *(*get_session_by_key)(void *, const SessionKey *);
-
-     /* Lookup by session flow ID and return Session Control Block
-           *
-           * Parameters
-           *   Session Cache (protocol specific)
-           *   Session Flow ID
-           *
-           */
-	 //void *(*get_session_by_flow_id)(void *, uint32_t);
 
      /* Create a new session
       *
