@@ -2272,17 +2272,11 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
 	{
-		// if called from the outside (handler), make sure key has flow id set
-		key->flow_id = p->pkth->flow_id;
-
 		table = session_cache->flowTable;
 		printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, key->flow_id);
 	}
 	else
 	{
-		// should be OK but force key flow id to 0 anyway
-		key->flow_id = 0;
-
 		table = session_cache->hashTable;
 	}
 
@@ -2325,7 +2319,13 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		}
 		else
 		{
-			scb->is_in_flow_table = false;
+			if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
+			{
+				scb->key->flow_id = p->pkth->flow_id;
+				scb->is_in_flow_table = true;
+			}
+			else
+				scb->is_in_flow_table = false;
 		}
 
 		scb->session_state = STREAM_STATE_NONE;
