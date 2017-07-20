@@ -887,8 +887,8 @@ void DecodeEthPkt(Packet * p, const DAQ_PktHdr_t * pkthdr, const uint8_t * pkt)
 
 	if (pkthdr->priv_ptr != NULL)
 	{
-		uint32_t flow_id = (uint32_t)(uintptr_t) pkthdr->flow_id;
-		printf("Decode packet with flow ID %u\n", flow_id);
+		//uint32_t flow_id = (uint32_t)(uintptr_t) pkthdr->flow_id;
+		//printf("Decode packet with flow ID %u\n", flow_id);
 
 		/*
 		 * DAQ notifies Snort not to perform all checks on headers
