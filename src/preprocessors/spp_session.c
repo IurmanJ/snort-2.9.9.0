@@ -2453,12 +2453,8 @@ static void *allocateProtocolSession( uint32_t protocol )
 
 static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 {
-	//SessionKey *key = (SessionKey*)d;
-	//printf("[CALL] %s on key %u\n", __FUNCTION__, key->flow_id);
-	//return key->flow_id;
-	uint32_t garbage = *(uint32_t*)(d+44); //addr space id + pad
 	uint32_t flowId = *(uint32_t*)(d+48);
-	printf("[CALL] %s on key %u (%u)\n", __FUNCTION__, flowId, garbage);
+	printf("[CALL] %s on key %u\n", __FUNCTION__, flowId);
 	return flowId;
 }
 
@@ -2509,18 +2505,21 @@ static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
 #endif
     final(a,b,c);
 
-    printf("flow_id at offset %u (should be 48)\n", offset+4);
-
     return c;
 }
 
 static int HashFlowIdCmp(const void *s1, const void *s2, size_t n)
 {
-	SessionKey *a = (SessionKey*)s1;
-	SessionKey *b = (SessionKey*)s2;
+	//SessionKey *a = (SessionKey*)s1;
+	//SessionKey *b = (SessionKey*)s2;
+	//printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, a->flow_id, b->flow_id);
+	//return !(a->flow_id == b->flow_id);
 
-	printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, a->flow_id, b->flow_id);
-	return !(a->flow_id == b->flow_id);
+	uint32_t flowId1 = *(uint32_t*)(s1+48);
+	uint32_t flowId2 = *(uint32_t*)(s1+48);
+
+	printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, flowId1, flowId2);
+	return !(flowId1 == flowId2);
 }
 
 static int HashKeyCmp(const void *s1, const void *s2, size_t n)
