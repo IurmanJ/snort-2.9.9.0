@@ -1745,21 +1745,16 @@ static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey
     if( !sessionCache )
         return NULL;
 
-    //printf("[%s] searching in %s...\n", __FUNCTION__, (key->flow_id > 0) ? "flow table" : "hash table");
-
     table = (key->flow_id > 0) ? session_cache->flowTable : session_cache->hashTable;
 
     hnode = sfxhash_find_node( table, key );
     if( hnode && hnode->data )
     {
-    	//printf("FOUND !\n");
         /* This is a unique hnode, since the sfxhash finds the
          * same key before returning this node.
          */
         scb = ( SessionControlBlock * ) hnode->data;
     }
-    //else
-    	//printf("NOT FOUND !\n");
 
     return scb;
 }
@@ -2268,14 +2263,9 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key)
 		return NULL;
 
 	if (p->pkth->priv_ptr != NULL && p->pkth->flow_id > 0)
-	{
 		table = session_cache->flowTable;
-		//printf("[CALL] %s on flow ID %u...\n", __FUNCTION__, key->flow_id);
-	}
 	else
-	{
 		table = session_cache->hashTable;
-	}
 
 	hnode = sfxhash_get_node(table, key);
 	if (!hnode)
@@ -2453,9 +2443,7 @@ static void *allocateProtocolSession( uint32_t protocol )
 
 static uint32_t HashFlowIdFunc(SFHASHFCN *p, unsigned char *d, int n)
 {
-	uint32_t flowId = *(uint32_t*)(d+48);
-	printf("[CALL] %s on key %u\n", __FUNCTION__, flowId);
-	return flowId;
+	return *(uint32_t*)(d+48); //flow_id field is at offset 48 (+4 for each uint32_t)
 }
 
 static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
@@ -2510,16 +2498,7 @@ static uint32_t HashFunc(SFHASHFCN *p, unsigned char *d, int n)
 
 static int HashFlowIdCmp(const void *s1, const void *s2, size_t n)
 {
-	//SessionKey *a = (SessionKey*)s1;
-	//SessionKey *b = (SessionKey*)s2;
-	//printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, a->flow_id, b->flow_id);
-	//return !(a->flow_id == b->flow_id);
-
-	uint32_t flowId1 = *(uint32_t*)(s1+48);
-	uint32_t flowId2 = *(uint32_t*)(s1+48);
-
-	printf("[CALL] %s on keys %u and %u\n", __FUNCTION__, flowId1, flowId2);
-	return !(flowId1 == flowId2);
+	return !(*(uint32_t*)(s1+48) == *(uint32_t*)(s2+48));
 }
 
 static int HashKeyCmp(const void *s1, const void *s2, size_t n)
