@@ -1758,7 +1758,7 @@ static void *getSessionControlBlockFromKey( void *sessionCache, const SessionKey
          */
         scb = ( SessionControlBlock * ) hnode->data;
     }
-    else
+    //else
     	//printf("NOT FOUND !\n");
 
     return scb;
