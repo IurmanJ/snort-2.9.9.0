@@ -43,7 +43,6 @@ struct oneway_sessions
 typedef struct _SessionCache
 {
     SFXHASH *hashTable;
-    SFXHASH *flowTable;
     SFXHASH_NODE *nextTimeoutEvalNode;
     uint32_t timeoutAggressive;
     uint32_t timeoutNominal;

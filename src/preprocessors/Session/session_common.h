@@ -187,7 +187,6 @@ typedef struct _SessionControlBlock
     bool    new_session;
     bool    in_oneway_list;
     bool    is_session_deletion_delayed;
-    bool	is_in_flow_table;
 
     // pointers for linking into list of oneway sessions
     struct _SessionControlBlock *ows_prev;
