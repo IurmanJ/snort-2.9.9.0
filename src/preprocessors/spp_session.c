@@ -1362,8 +1362,7 @@ static void sessionPacketProcessor(Packet *p, void *context)
                 break;
 
             case IPPROTO_UDP:
-            	printf("from ports %u to %u\n", p->udph->uh_sport, p->udph->uh_dport);
-                scb = findPacketSessionControlBlock( proto_session_caches[ SESSION_PROTO_UDP ], p, &key );
+            	scb = findPacketSessionControlBlock( proto_session_caches[ SESSION_PROTO_UDP ], p, &key );
                 if( ( scb == NULL ) &&  SessionTrackingEnabled( session_configuration, SESSION_PROTO_UDP ) )
                     scb = createSession( proto_session_caches[ SESSION_PROTO_UDP ], p, &key );
 
