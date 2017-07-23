@@ -5284,89 +5284,85 @@ void DecodeUDP(const uint8_t * pkt, const uint32_t len, Packet * p)
 			PopUdp(p);
 			return;
 		}
-    }
 
-	//TODO [JUSTIN]: udp checksum looks too elaborate to be included in FastClick, especially the last
-	//specific check about ESP and Teredo, so keep it here (?)
-	//Note: it doesn't look so greedy anyway...
+		if (ScUdpChecksums())
+		{
+			/* look at the UDP checksum to make sure we've got a good packet */
+			uint16_t csum;
+			if(IS_IP4(p))
+			{
+				pseudoheader ph;
+				ph.sip = p->iph->ip_src.s_addr;
+				ph.dip = p->iph->ip_dst.s_addr;
+				ph.zero = 0;
+				ph.protocol = GET_IPH_PROTO(p);
+				ph.len = p->udph->uh_len;
+				/* Don't do checksum calculation if
+				 * 1) Fragmented, OR
+				 * 2) UDP header chksum value is 0.
+				 */
+				if( !fragmented_udp_flag && p->udph->uh_chk )
+				{
+					csum = in_chksum_udp(&ph,
+						(uint16_t *)(p->udph), uhlen);
+				}
+				else
+				{
+					csum = 0;
+				}
+			}
+			else
+			{
+				IP6RawHdr* hdr6 = (IP6RawHdr*)p->iph;
+				pseudoheader6 ph6;
+				COPY4(ph6.sip, hdr6->ip6_src.s6_addr32);
+				COPY4(ph6.dip, hdr6->ip6_dst.s6_addr32);
+				ph6.zero = 0;
+				ph6.protocol = GET_IPH_PROTO(p);
+				ph6.len = htons((u_short)len);
 
-    if (ScUdpChecksums())
-    {
-        /* look at the UDP checksum to make sure we've got a good packet */
-        uint16_t csum;
-        if(IS_IP4(p))
-        {
-            pseudoheader ph;
-            ph.sip = p->iph->ip_src.s_addr;
-            ph.dip = p->iph->ip_dst.s_addr;
-            ph.zero = 0;
-            ph.protocol = GET_IPH_PROTO(p);
-            ph.len = p->udph->uh_len;
-            /* Don't do checksum calculation if
-             * 1) Fragmented, OR
-             * 2) UDP header chksum value is 0.
-             */
-            if( !fragmented_udp_flag && p->udph->uh_chk )
-            {
-                csum = in_chksum_udp(&ph,
-                    (uint16_t *)(p->udph), uhlen);
-            }
-            else
-            {
-                csum = 0;
-            }
-        }
-        else
-        {
-            IP6RawHdr* hdr6 = (IP6RawHdr*)p->iph;
-            pseudoheader6 ph6;
-            COPY4(ph6.sip, hdr6->ip6_src.s6_addr32);
-            COPY4(ph6.dip, hdr6->ip6_dst.s6_addr32);
-            ph6.zero = 0;
-            ph6.protocol = GET_IPH_PROTO(p);
-            ph6.len = htons((u_short)len);
+				/* Alert on checksum value 0 for ipv6 packets */
+				if(!p->udph->uh_chk)
+				{
+					csum = 1;
+					DecoderEvent(p, DECODE_UDP_IPV6_ZERO_CHECKSUM,
+									DECODE_UDP_IPV6_ZERO_CHECKSUM_STR, 1, 1);
+				}
+				/* Don't do checksum calculation if
+				 * 1) Fragmented
+				 * (UDP checksum is not optional in IP6)
+				 */
+				else if( !fragmented_udp_flag )
+				{
+					csum = in_chksum_udp6(&ph6,
+						(uint16_t *)(p->udph), uhlen);
+				}
+				else
+				{
+					csum = 0;
+				}
+			}
+			if(csum)
+			{
+				/* Don't drop the packet if this was ESP or Teredo.
+				   Just stop decoding. */
+				if (p->packet_flags & PKT_UNSURE_ENCAP)
+				{
+					PopUdp(p);
+					return;
+				}
 
-            /* Alert on checksum value 0 for ipv6 packets */
-            if(!p->udph->uh_chk)
-            {
-                csum = 1;
-                DecoderEvent(p, DECODE_UDP_IPV6_ZERO_CHECKSUM,
-                                DECODE_UDP_IPV6_ZERO_CHECKSUM_STR, 1, 1);
-            }
-            /* Don't do checksum calculation if
-             * 1) Fragmented
-             * (UDP checksum is not optional in IP6)
-             */
-            else if( !fragmented_udp_flag )
-            {
-                csum = in_chksum_udp6(&ph6,
-                    (uint16_t *)(p->udph), uhlen);
-            }
-            else
-            {
-                csum = 0;
-            }
-        }
-        if(csum)
-        {
-            /* Don't drop the packet if this was ESP or Teredo.
-               Just stop decoding. */
-            if (p->packet_flags & PKT_UNSURE_ENCAP)
-            {
-                PopUdp(p);
-                return;
-            }
+				p->error_flags |= PKT_ERR_CKSUM_UDP;
+				DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Bad UDP Checksum\n"););
 
-            p->error_flags |= PKT_ERR_CKSUM_UDP;
-            DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Bad UDP Checksum\n"););
-
-            if ( ScIdsMode() )
-                queueExecDrop(execUdpChksmDrop, p);
-        }
-        else
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "UDP Checksum: OK\n"););
-        }
+				if ( ScIdsMode() )
+					queueExecDrop(execUdpChksmDrop, p);
+			}
+			else
+			{
+				DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "UDP Checksum: OK\n"););
+			}
+		}
     }
 
     /* fill in the printout data structs */
