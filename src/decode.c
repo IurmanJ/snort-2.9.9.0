@@ -5455,19 +5455,22 @@ void DecodeTCP(const uint8_t * pkt, const uint32_t len, Packet * p)
 {
     uint32_t hlen;            /* TCP header length */
 
-    if(len < TCP_HEADER_LEN)
+    if (p->pkth->priv_ptr == NULL)
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "TCP packet (len = %d) cannot contain " "20 byte header\n", len););
+		if(len < TCP_HEADER_LEN)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"TCP packet (len = %d) cannot contain " "20 byte header\n", len););
 
-        DecoderEvent(p, DECODE_TCP_DGRAM_LT_TCPHDR,
-                        DECODE_TCP_DGRAM_LT_TCPHDR_STR, 1, 1);
+			DecoderEvent(p, DECODE_TCP_DGRAM_LT_TCPHDR,
+							DECODE_TCP_DGRAM_LT_TCPHDR_STR, 1, 1);
 
-        p->tcph = NULL;
-        pc.discards++;
-        pc.tdisc++;
+			p->tcph = NULL;
+			pc.discards++;
+			pc.tdisc++;
 
-        return;
+			return;
+		}
     }
 
     /* lay TCP on top of the data cause there is enough of it! */
@@ -5479,165 +5482,168 @@ void DecodeTCP(const uint8_t * pkt, const uint32_t len, Packet * p)
     DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "TCP th_off is %d, passed len is %lu\n",
                 TCP_OFFSET(p->tcph), (unsigned long)len););
 
-    if(hlen < TCP_HEADER_LEN)
+    if (p->pkth->priv_ptr == NULL)
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "TCP Data Offset (%d) < hlen (%d) \n",
-            TCP_OFFSET(p->tcph), hlen););
+		if(hlen < TCP_HEADER_LEN)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"TCP Data Offset (%d) < hlen (%d) \n",
+				TCP_OFFSET(p->tcph), hlen););
 
-        DecoderEvent(p, DECODE_TCP_INVALID_OFFSET,
-                        DECODE_TCP_INVALID_OFFSET_STR, 1, 1);
+			DecoderEvent(p, DECODE_TCP_INVALID_OFFSET,
+							DECODE_TCP_INVALID_OFFSET_STR, 1, 1);
 
-        p->tcph = NULL;
-        pc.discards++;
-        pc.tdisc++;
+			p->tcph = NULL;
+			pc.discards++;
+			pc.tdisc++;
 
-        return;
-    }
+			return;
+		}
 
-    if(hlen > len)
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "TCP Data Offset(%d) < longer than payload(%d)!\n",
-            TCP_OFFSET(p->tcph) << 2, len););
+		if(hlen > len)
+		{
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+				"TCP Data Offset(%d) < longer than payload(%d)!\n",
+				TCP_OFFSET(p->tcph) << 2, len););
 
-        DecoderEventDrop(p, DECODE_TCP_LARGE_OFFSET,
-                            DECODE_TCP_LARGE_OFFSET_STR,
-                            ScDecoderOversizedAlerts(),
-                            ScDecoderOversizedDrops());
+			DecoderEventDrop(p, DECODE_TCP_LARGE_OFFSET,
+								DECODE_TCP_LARGE_OFFSET_STR,
+								ScDecoderOversizedAlerts(),
+								ScDecoderOversizedDrops());
 
-        p->tcph = NULL;
-        pc.discards++;
-        pc.tdisc++;
+			p->tcph = NULL;
+			pc.discards++;
+			pc.tdisc++;
 
-        return;
-    }
+			return;
+		}
 
-    /* Checksum code moved in front of the other decoder alerts.
-       If it's a bad checksum (maybe due to encrypted ESP traffic), the other
-       alerts could be false positives. */
-    if (ScTcpChecksums())
-    {
-        uint16_t csum;
-        if(IS_IP4(p))
-        {
-            pseudoheader ph;
-            ph.sip = p->iph->ip_src.s_addr;
-            ph.dip = p->iph->ip_dst.s_addr;
-            /* setup the pseudo header for checksum calculation */
-            ph.zero = 0;
-            ph.protocol = GET_IPH_PROTO(p);
-            ph.len = htons((u_short)len);
+		/* Checksum code moved in front of the other decoder alerts.
+		   If it's a bad checksum (maybe due to encrypted ESP traffic), the other
+		   alerts could be false positives. */
+		if (ScTcpChecksums())
+		{
+			uint16_t csum;
+			if(IS_IP4(p))
+			{
+				pseudoheader ph;
+				ph.sip = p->iph->ip_src.s_addr;
+				ph.dip = p->iph->ip_dst.s_addr;
+				/* setup the pseudo header for checksum calculation */
+				ph.zero = 0;
+				ph.protocol = GET_IPH_PROTO(p);
+				ph.len = htons((u_short)len);
 
-            /* if we're being "stateless" we probably don't care about the TCP
-             * checksum, but it's not bad to keep around for shits and giggles */
-            /* calculate the checksum */
-            csum = in_chksum_tcp(&ph, (uint16_t *)(p->tcph), len);
-        }
-        /* IPv6 traffic */
-        else
-        {
-            IP6RawHdr* hdr6 = (IP6RawHdr*)p->iph;
-            pseudoheader6 ph6;
-            COPY4(ph6.sip, hdr6->ip6_src.s6_addr32);
-            COPY4(ph6.dip, hdr6->ip6_dst.s6_addr32);
-            ph6.zero = 0;
-            ph6.protocol = GET_IPH_PROTO(p);
-            ph6.len = htons((u_short)len);
+				/* if we're being "stateless" we probably don't care about the TCP
+				 * checksum, but it's not bad to keep around for shits and giggles */
+				/* calculate the checksum */
+				csum = in_chksum_tcp(&ph, (uint16_t *)(p->tcph), len);
+			}
+			/* IPv6 traffic */
+			else
+			{
+				IP6RawHdr* hdr6 = (IP6RawHdr*)p->iph;
+				pseudoheader6 ph6;
+				COPY4(ph6.sip, hdr6->ip6_src.s6_addr32);
+				COPY4(ph6.dip, hdr6->ip6_dst.s6_addr32);
+				ph6.zero = 0;
+				ph6.protocol = GET_IPH_PROTO(p);
+				ph6.len = htons((u_short)len);
 
-            csum = in_chksum_tcp6(&ph6, (uint16_t *)(p->tcph), len);
-        }
+				csum = in_chksum_tcp6(&ph6, (uint16_t *)(p->tcph), len);
+			}
 
-        if(csum)
-        {
-            /* Don't drop the packet if this is encapuslated in Teredo or ESP.
-               Just get rid of the TCP header and stop decoding. */
-            if (p->packet_flags & PKT_UNSURE_ENCAP)
-            {
-                p->tcph = NULL;
-                return;
-            }
+			if(csum)
+			{
+				/* Don't drop the packet if this is encapuslated in Teredo or ESP.
+				   Just get rid of the TCP header and stop decoding. */
+				if (p->packet_flags & PKT_UNSURE_ENCAP)
+				{
+					p->tcph = NULL;
+					return;
+				}
 
-            p->error_flags |= PKT_ERR_CKSUM_TCP;
-            DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Bad TCP checksum\n",
-                                    "0x%x versus 0x%x\n", csum,
-                                    ntohs(p->tcph->th_sum)););
+				p->error_flags |= PKT_ERR_CKSUM_TCP;
+				DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Bad TCP checksum\n",
+										"0x%x versus 0x%x\n", csum,
+										ntohs(p->tcph->th_sum)););
 
-            if ( ScIdsMode() )
-                queueExecDrop(execTcpChksmDrop, p);
-        }
-        else
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_DECODE,"TCP Checksum: OK\n"););
-        }
-    }
+				if ( ScIdsMode() )
+					queueExecDrop(execTcpChksmDrop, p);
+			}
+			else
+			{
+				DEBUG_WRAP(DebugMessage(DEBUG_DECODE,"TCP Checksum: OK\n"););
+			}
+		}
 
-    if(Event_Enabled(DECODE_TCP_XMAS) || Event_Enabled(DECODE_TCP_NMAP_XMAS))
-    {
-        if(TCP_ISFLAGSET(p->tcph, (TH_FIN|TH_PUSH|TH_URG)))
-        {
-            if(TCP_ISFLAGSET(p->tcph, (TH_SYN|TH_ACK|TH_RST)))
-            {
-                DecoderEvent(p, DECODE_TCP_XMAS, DECODE_TCP_XMAS_STR, 1, 1);
-            }
-            else
-            {
-                DecoderEvent(p, DECODE_TCP_NMAP_XMAS, DECODE_TCP_NMAP_XMAS_STR, 1, 1);
-            }
-            // Allowing this packet for further processing
-            // (in case there is a valid data inside it).
-            /*p->tcph = NULL;
-            pc.discards++;
-            pc.tdisc++;
-            return;*/
-        }
-    }
+		if(Event_Enabled(DECODE_TCP_XMAS) || Event_Enabled(DECODE_TCP_NMAP_XMAS))
+		{
+			if(TCP_ISFLAGSET(p->tcph, (TH_FIN|TH_PUSH|TH_URG)))
+			{
+				if(TCP_ISFLAGSET(p->tcph, (TH_SYN|TH_ACK|TH_RST)))
+				{
+					DecoderEvent(p, DECODE_TCP_XMAS, DECODE_TCP_XMAS_STR, 1, 1);
+				}
+				else
+				{
+					DecoderEvent(p, DECODE_TCP_NMAP_XMAS, DECODE_TCP_NMAP_XMAS_STR, 1, 1);
+				}
+				// Allowing this packet for further processing
+				// (in case there is a valid data inside it).
+				/*p->tcph = NULL;
+				pc.discards++;
+				pc.tdisc++;
+				return;*/
+			}
+		}
 
-    if(TCP_ISFLAGSET(p->tcph, (TH_SYN)))
-    {
-        /* check if only SYN is set */
-        if( p->tcph->th_flags == TH_SYN )
-        {
-            if( Event_Enabled(DECODE_DOS_NAPTHA) )
-            {
-                if( ntohl(p->tcph->th_seq) == 6060842 )
-                {
-                    if( ntohs(GET_IPH_ID(p)) == 413 )
-                    {
-                        DecoderEvent(p, DECODE_DOS_NAPTHA,
-                                        DECODE_DOS_NAPTHA_STR, 1, 1);
-                    }
-                }
-            }
-        }
+		if(TCP_ISFLAGSET(p->tcph, (TH_SYN)))
+		{
+			/* check if only SYN is set */
+			if( p->tcph->th_flags == TH_SYN )
+			{
+				if( Event_Enabled(DECODE_DOS_NAPTHA) )
+				{
+					if( ntohl(p->tcph->th_seq) == 6060842 )
+					{
+						if( ntohs(GET_IPH_ID(p)) == 413 )
+						{
+							DecoderEvent(p, DECODE_DOS_NAPTHA,
+											DECODE_DOS_NAPTHA_STR, 1, 1);
+						}
+					}
+				}
+			}
 
-        if( Event_Enabled(DECODE_SYN_TO_MULTICAST) )
-        {
-            if( IpAddrSetContains(SynToMulticastDstIp, GET_DST_ADDR(p)) )
-            {
-                DecoderEvent(p, DECODE_SYN_TO_MULTICAST,
-                                DECODE_SYN_TO_MULTICAST_STR, 1, 1);
-            }
-        }
-        if ( Event_Enabled(DECODE_TCP_SYN_RST) )
-            if ( (p->tcph->th_flags & TH_RST) )
-                DecoderEvent(p, EVARGS(TCP_SYN_RST), 1, 1);
+			if( Event_Enabled(DECODE_SYN_TO_MULTICAST) )
+			{
+				if( IpAddrSetContains(SynToMulticastDstIp, GET_DST_ADDR(p)) )
+				{
+					DecoderEvent(p, DECODE_SYN_TO_MULTICAST,
+									DECODE_SYN_TO_MULTICAST_STR, 1, 1);
+				}
+			}
+			if ( Event_Enabled(DECODE_TCP_SYN_RST) )
+				if ( (p->tcph->th_flags & TH_RST) )
+					DecoderEvent(p, EVARGS(TCP_SYN_RST), 1, 1);
 
-        if ( Event_Enabled(DECODE_TCP_SYN_FIN) )
-            if ( (p->tcph->th_flags & TH_FIN) )
-                DecoderEvent(p, EVARGS(TCP_SYN_FIN), 1, 1);
-    }
-    else
-    {   // we already know there is no SYN
-        if ( Event_Enabled(DECODE_TCP_NO_SYN_ACK_RST) )
-            if ( !(p->tcph->th_flags & (TH_ACK|TH_RST)) )
-                DecoderEvent(p, EVARGS(TCP_NO_SYN_ACK_RST), 1, 1);
-    }
+			if ( Event_Enabled(DECODE_TCP_SYN_FIN) )
+				if ( (p->tcph->th_flags & TH_FIN) )
+					DecoderEvent(p, EVARGS(TCP_SYN_FIN), 1, 1);
+		}
+		else
+		{   // we already know there is no SYN
+			if ( Event_Enabled(DECODE_TCP_NO_SYN_ACK_RST) )
+				if ( !(p->tcph->th_flags & (TH_ACK|TH_RST)) )
+					DecoderEvent(p, EVARGS(TCP_NO_SYN_ACK_RST), 1, 1);
+		}
 
-    if ( Event_Enabled(DECODE_TCP_MUST_ACK) )
-        if ( (p->tcph->th_flags & (TH_FIN|TH_PUSH|TH_URG)) &&
-            !(p->tcph->th_flags & TH_ACK) )
-            DecoderEvent(p, EVARGS(TCP_MUST_ACK), 1, 1);
+		if ( Event_Enabled(DECODE_TCP_MUST_ACK) )
+			if ( (p->tcph->th_flags & (TH_FIN|TH_PUSH|TH_URG)) &&
+				!(p->tcph->th_flags & TH_ACK) )
+				DecoderEvent(p, EVARGS(TCP_MUST_ACK), 1, 1);
+	}
 
     /* stuff more data into the printout data struct */
 #ifdef HAVE_DAQ_REAL_ADDRESSES
@@ -5688,10 +5694,13 @@ void DecodeTCP(const uint8_t * pkt, const uint32_t len, Packet * p)
         p->dsize = 0;
     }
 
-    if ( Event_Enabled(DECODE_TCP_BAD_URP) )
-        if ( (p->tcph->th_flags & TH_URG) &&
-            (!p->dsize || ntohs(p->tcph->th_urp) > p->dsize) )
-            DecoderEvent(p, EVARGS(TCP_BAD_URP), 1, 1);
+    if (p->pkth->priv_ptr == NULL)
+    {
+		if ( Event_Enabled(DECODE_TCP_BAD_URP) )
+			if ( (p->tcph->th_flags & TH_URG) &&
+				(!p->dsize || ntohs(p->tcph->th_urp) > p->dsize) )
+				DecoderEvent(p, EVARGS(TCP_BAD_URP), 1, 1);
+    }
 
     p->proto_bits |= PROTO_BIT__TCP;
 
@@ -5703,7 +5712,8 @@ void DecodeTCP(const uint8_t * pkt, const uint32_t len, Packet * p)
         return;
     }
 
-    TCPMiscTests(p);
+    if (p->pkth->priv_ptr == NULL)
+    	TCPMiscTests(p);
 }
 
 //--------------------------------------------------------------------
@@ -5853,6 +5863,8 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
     int code = 2;
     uint8_t byte_skip;
 
+    bool check;
+
     /* Here's what we're doing so that when we find out what these
      * other buggers of TCP option codes are, we can do something
      * useful
@@ -5867,16 +5879,21 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
      *
      */
 
-    if(o_len > TCP_OPTLENMAX)
+    if (p->pkth->priv_ptr == NULL)
     {
-        /* This shouldn't ever alert if we are doing our job properly
-         * in the caller */
-        p->tcph = NULL; /* let's just alert */
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-                                "o_len(%u) > TCP_OPTLENMAX(%u)\n",
-                                o_len, TCP_OPTLENMAX));
-        return;
+		if(o_len > TCP_OPTLENMAX)
+		{
+			/* This shouldn't ever alert if we are doing our job properly
+			 * in the caller */
+			p->tcph = NULL; /* let's just alert */
+			DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+									"o_len(%u) > TCP_OPTLENMAX(%u)\n",
+									o_len, TCP_OPTLENMAX));
+			return;
+		}
     }
+
+    check = (p->pkth->priv_ptr == NULL) ? true : false;
 
     while((option_ptr < end_ptr) && (opt_count < TCP_OPTLENMAX) && (code >= 0) && !done)
     {
@@ -5903,41 +5920,44 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
             break;
         case TCPOPT_MAXSEG:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_MAXSEG,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         case TCPOPT_SACKOK:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_SACKOK,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         case TCPOPT_WSCALE:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_WSCALE,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
-            if (code == 0)
+                                  &p->tcp_options[opt_count], &byte_skip, check);
+            if (p->pkth->priv_ptr == NULL)
             {
-                if (
-                    ((uint16_t) p->tcp_options[opt_count].data[0] > 14))
-                {
-                    /* LOG INVALID WINDOWSCALE alert */
-                    if (ScDecoderTcpOptAlerts())
-                    {
-                        DecoderOptEvent(p, DECODE_TCPOPT_WSCALE_INVALID,
-                                        DECODE_TCPOPT_WSCALE_INVALID_STR, 1, 1,
-                                        execTcpOptDrop);
-                    }
-                }
+				if (code == 0)
+				{
+					if (
+						((uint16_t) p->tcp_options[opt_count].data[0] > 14))
+					{
+						/* LOG INVALID WINDOWSCALE alert */
+						if (ScDecoderTcpOptAlerts())
+						{
+							DecoderOptEvent(p, DECODE_TCPOPT_WSCALE_INVALID,
+											DECODE_TCPOPT_WSCALE_INVALID_STR, 1, 1,
+											execTcpOptDrop);
+						}
+					}
+				}
             }
             break;
         case TCPOPT_ECHO: /* both use the same lengths */
         case TCPOPT_ECHOREPLY:
             obsolete_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_ECHO,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         case TCPOPT_MD5SIG:
             /* RFC 5925 obsoletes this option (see below) */
             obsolete_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_MD5SIG,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         case TCPOPT_AUTH:
             /* Has to have at least 4 bytes - see RFC 5925, Section 2.2 */
@@ -5945,11 +5965,11 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
                 code = TCP_OPT_BADLEN;
             else
                 code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                        &p->tcp_options[opt_count], &byte_skip, false);
+                        &p->tcp_options[opt_count], &byte_skip, check);
             break;
         case TCPOPT_SACK:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             if((code == 0) && (p->tcp_options[opt_count].data == NULL))
                 code = TCP_OPT_BADLEN;
 
@@ -5960,17 +5980,17 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_CC:  /* all 3 use the same lengths / T/TCP */
         case TCPOPT_CC_NEW:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_CC,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         case TCPOPT_TRAILER_CSUM:
             experimental_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_TRAILER_CSUM,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
 
         case TCPOPT_TIMESTAMP:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_TIMESTAMP,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
 
         case TCPOPT_SKEETER:
@@ -5978,7 +5998,7 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_UNASSIGNED:
             obsolete_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         default:
         case TCPOPT_SCPS:
@@ -5991,32 +6011,35 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_SNAP:
             experimental_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->tcp_options[opt_count], &byte_skip, false);
+                                  &p->tcp_options[opt_count], &byte_skip, check);
             break;
         }
 
-        if(code < 0)
+        if (p->pkth->priv_ptr == NULL)
         {
-            if(code == TCP_OPT_BADLEN)
-            {
-                DecoderOptEvent(p, DECODE_TCPOPT_BADLEN,
-                                DECODE_TCPOPT_BADLEN_STR, 1, 1,
-                                execTcpOptDrop);
-            }
-            else if(code == TCP_OPT_TRUNC)
-            {
-                DecoderOptEvent(p, DECODE_TCPOPT_TRUNCATED,
-                                DECODE_TCPOPT_TRUNCATED_STR, 1, 1,
-                                execTcpOptDrop);
-            }
+			if(code < 0)
+			{
+				if(code == TCP_OPT_BADLEN)
+				{
+					DecoderOptEvent(p, DECODE_TCPOPT_BADLEN,
+									DECODE_TCPOPT_BADLEN_STR, 1, 1,
+									execTcpOptDrop);
+				}
+				else if(code == TCP_OPT_TRUNC)
+				{
+					DecoderOptEvent(p, DECODE_TCPOPT_TRUNCATED,
+									DECODE_TCPOPT_TRUNCATED_STR, 1, 1,
+									execTcpOptDrop);
+				}
 
-            /* set the option count to the number of valid
-             * options found before this bad one
-             * some implementations (BSD and Linux) ignore
-             * the bad ones, but accept the good ones */
-            p->tcp_option_count = opt_count;
+				/* set the option count to the number of valid
+				 * options found before this bad one
+				 * some implementations (BSD and Linux) ignore
+				 * the bad ones, but accept the good ones */
+				p->tcp_option_count = opt_count;
 
-            return;
+				return;
+			}
         }
 
         opt_count++;
@@ -6026,23 +6049,26 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
 
     p->tcp_option_count = opt_count;
 
-    if (experimental_option_found)
+    if (p->pkth->priv_ptr == NULL)
     {
-        DecoderOptEvent(p, DECODE_TCPOPT_EXPERIMENT,
-                        DECODE_TCPOPT_EXPERIMENT_STR, 1, 1,
-                        execTcpOptExpDrop);
-    }
-    else if (obsolete_option_found)
-    {
-        DecoderOptEvent(p, DECODE_TCPOPT_OBSOLETE,
-                        DECODE_TCPOPT_OBSOLETE_STR, 1, 1,
-                        execTcpOptObsDrop);
-    }
-    else if (ttcp_found)
-    {
-        DecoderOptEvent(p, DECODE_TCPOPT_TTCP,
-                        DECODE_TCPOPT_TTCP_STR, 1, 1,
-                        execTcpOptTTcpDrop);
+		if (experimental_option_found)
+		{
+			DecoderOptEvent(p, DECODE_TCPOPT_EXPERIMENT,
+							DECODE_TCPOPT_EXPERIMENT_STR, 1, 1,
+							execTcpOptExpDrop);
+		}
+		else if (obsolete_option_found)
+		{
+			DecoderOptEvent(p, DECODE_TCPOPT_OBSOLETE,
+							DECODE_TCPOPT_OBSOLETE_STR, 1, 1,
+							execTcpOptObsDrop);
+		}
+		else if (ttcp_found)
+		{
+			DecoderOptEvent(p, DECODE_TCPOPT_TTCP,
+							DECODE_TCPOPT_TTCP_STR, 1, 1,
+							execTcpOptTTcpDrop);
+		}
     }
 
     return;
@@ -6068,7 +6094,7 @@ void DecodeIPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
     uint8_t opt_count = 0; /* what option are we processing right now */
     uint8_t byte_skip;
     const uint8_t *len_ptr;
-    bool check = true;
+    bool check = (p->pkth->priv_ptr == NULL) ? true : false;
     int code = 0;  /* negative error codes are returned from bad options */
 
 
@@ -6102,10 +6128,7 @@ void DecodeIPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
             break;
         default:
             /* handle all the dynamic features */
-        	if (p->pkth->priv_ptr != NULL)
-        		check = false;
-
-            code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
+        	code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
                                   &p->ip_options[opt_count], &byte_skip, check);
         }
 
