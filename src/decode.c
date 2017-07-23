@@ -2585,22 +2585,25 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
     /* lay the IP struct over the raw data */
     p->inner_iph = p->iph = (IPHdr *)pkt;
 
-    /*
-     * with datalink DLT_RAW it's impossible to differ ARP datagrams from IP.
-     * So we are just ignoring non IP datagrams
-     */
-    if(IP_VER((IPHdr*)pkt) != 4)
+    if (p->pkth->priv_ptr == NULL)
     {
-        if ((p->packet_flags & PKT_UNSURE_ENCAP) == 0)
-            DecoderEvent(p, DECODE_NOT_IPV4_DGRAM,
-                            DECODE_NOT_IPV4_DGRAM_STR, 1, 1);
+		/*
+		 * with datalink DLT_RAW it's impossible to differ ARP datagrams from IP.
+		 * So we are just ignoring non IP datagrams
+		 */
+		if(IP_VER((IPHdr*)pkt) != 4)
+		{
+			if ((p->packet_flags & PKT_UNSURE_ENCAP) == 0)
+				DecoderEvent(p, DECODE_NOT_IPV4_DGRAM,
+								DECODE_NOT_IPV4_DGRAM_STR, 1, 1);
 
-        p->iph = NULL;
-        p->family = NO_IP;
+			p->iph = NULL;
+			p->family = NO_IP;
 
-        pc.discards++;
-        pc.ipdisc++;
-        return;
+			pc.discards++;
+			pc.ipdisc++;
+			return;
+		}
     }
 
     sfiph_build(p, p->iph, AF_INET);
@@ -2686,7 +2689,7 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
 		 */
 		if(ScIdsMode())
 		{
-			IP4AddrTests(p);
+			IP4AddrTests(p); //Can be done in FastClick so it's ok to skip it in metadata mode
 		}
 
 		if (ScIpChecksums())
@@ -2762,13 +2765,16 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
     /* mask off the high bits in the fragment offset field */
     p->frag_offset &= 0x1FFF;
 
-    if ( Event_Enabled(DECODE_IP4_DF_OFFSET) )
-        if ( p->df && p->frag_offset )
-            DecoderEvent(p, EVARGS(IP4_DF_OFFSET), 1, 1);
+    if (p->pkth->priv_ptr == NULL)
+    {
+		if ( Event_Enabled(DECODE_IP4_DF_OFFSET) )
+			if ( p->df && p->frag_offset )
+				DecoderEvent(p, EVARGS(IP4_DF_OFFSET), 1, 1);
 
-    if ( Event_Enabled(DECODE_IP4_LEN_OFFSET) )
-        if ( p->frag_offset + p->actual_ip_len > IP_MAXPACKET )
-            DecoderEvent(p, EVARGS(IP4_LEN_OFFSET), 1, 1);
+		if ( Event_Enabled(DECODE_IP4_LEN_OFFSET) )
+			if ( p->frag_offset + p->actual_ip_len > IP_MAXPACKET )
+				DecoderEvent(p, EVARGS(IP4_LEN_OFFSET), 1, 1);
+    }
 
     if(p->frag_offset || p->mf)
     {
@@ -2792,14 +2798,17 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
         p->frag_flag = 0;
     }
 
-    if(Event_Enabled(DECODE_BAD_FRAGBITS))
+    if (p->pkth->priv_ptr == NULL)
     {
+		if(Event_Enabled(DECODE_BAD_FRAGBITS))
+		{
 
-        if( p->mf && p->df )
-        {
-            DecoderEvent(p, DECODE_BAD_FRAGBITS,
-                            DECODE_BAD_FRAGBITS_STR, 1, 1);
-        }
+			if( p->mf && p->df )
+			{
+				DecoderEvent(p, DECODE_BAD_FRAGBITS,
+								DECODE_BAD_FRAGBITS_STR, 1, 1);
+			}
+		}
     }
 
     /* Set some convienience pointers */
@@ -2813,8 +2822,9 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
         p->proto_bits |= PROTO_BIT__IP;
     }
 
-    //TODO: [JUSTIN] could be done in FastClick (?) but maybe too elaborate so keep it here ?
-    IPMiscTests(p);
+    //(JUSTIN) Could be done in FastClick too (even if more elaborate), so skip it
+    if (p->pkth->priv_ptr == NULL)
+    	IPMiscTests(p);
 
     /* if this packet isn't a fragment
      * or if it is, its a UDP packet and offset is 0 */
@@ -5723,46 +5733,50 @@ static inline int OptLenValidate(const uint8_t *option_ptr,
                                  const uint8_t *len_ptr,
                                  int expected_len,
                                  Options *tcpopt,
-                                 uint8_t *byte_skip)
+                                 uint8_t *byte_skip,
+								 bool check)
 {
     *byte_skip = 0;
 
-    if(len_ptr == NULL)
+    if (check)
     {
-        return TCP_OPT_TRUNC;
-    }
+		if(len_ptr == NULL)
+		{
+			return TCP_OPT_TRUNC;
+		}
 
-    if(*len_ptr == 0 || expected_len == 0 || expected_len == 1)
-    {
-        return TCP_OPT_BADLEN;
-    }
-    else if(expected_len > 1)
-    {
-        if((option_ptr + expected_len) > end)
-        {
-            /* not enough data to read in a perfect world */
-            return TCP_OPT_TRUNC;
-        }
+		if(*len_ptr == 0 || expected_len == 0 || expected_len == 1)
+		{
+			return TCP_OPT_BADLEN;
+		}
+		else if(expected_len > 1)
+		{
+			if((option_ptr + expected_len) > end)
+			{
+				/* not enough data to read in a perfect world */
+				return TCP_OPT_TRUNC;
+			}
 
-        if(*len_ptr != expected_len)
-        {
-            /* length is not valid */
-            return TCP_OPT_BADLEN;
-        }
-    }
-    else /* expected_len < 0 (i.e. variable length) */
-    {
-        if(*len_ptr < 2)
-        {
-            /* RFC sez that we MUST have atleast this much data */
-            return TCP_OPT_BADLEN;
-        }
+			if(*len_ptr != expected_len)
+			{
+				/* length is not valid */
+				return TCP_OPT_BADLEN;
+			}
+		}
+		else /* expected_len < 0 (i.e. variable length) */
+		{
+			if(*len_ptr < 2)
+			{
+				/* RFC sez that we MUST have atleast this much data */
+				return TCP_OPT_BADLEN;
+			}
 
-        if((option_ptr + *len_ptr) > end)
-        {
-            /* not enough data to read in a perfect world */
-            return TCP_OPT_TRUNC;
-        }
+			if((option_ptr + *len_ptr) > end)
+			{
+				/* not enough data to read in a perfect world */
+				return TCP_OPT_TRUNC;
+			}
+		}
     }
 
     tcpopt->len = *len_ptr - 2;
@@ -5893,15 +5907,15 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
             break;
         case TCPOPT_MAXSEG:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_MAXSEG,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         case TCPOPT_SACKOK:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_SACKOK,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         case TCPOPT_WSCALE:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_WSCALE,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             if (code == 0)
             {
                 if (
@@ -5921,13 +5935,13 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_ECHOREPLY:
             obsolete_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_ECHO,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         case TCPOPT_MD5SIG:
             /* RFC 5925 obsoletes this option (see below) */
             obsolete_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_MD5SIG,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         case TCPOPT_AUTH:
             /* Has to have at least 4 bytes - see RFC 5925, Section 2.2 */
@@ -5935,11 +5949,11 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
                 code = TCP_OPT_BADLEN;
             else
                 code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                        &p->tcp_options[opt_count], &byte_skip);
+                        &p->tcp_options[opt_count], &byte_skip, false);
             break;
         case TCPOPT_SACK:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             if((code == 0) && (p->tcp_options[opt_count].data == NULL))
                 code = TCP_OPT_BADLEN;
 
@@ -5950,17 +5964,17 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_CC:  /* all 3 use the same lengths / T/TCP */
         case TCPOPT_CC_NEW:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_CC,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         case TCPOPT_TRAILER_CSUM:
             experimental_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_TRAILER_CSUM,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
 
         case TCPOPT_TIMESTAMP:
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, TCPOLEN_TIMESTAMP,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
 
         case TCPOPT_SKEETER:
@@ -5968,7 +5982,7 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_UNASSIGNED:
             obsolete_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         default:
         case TCPOPT_SCPS:
@@ -5981,7 +5995,7 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         case TCPOPT_SNAP:
             experimental_option_found = 1;
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->tcp_options[opt_count], &byte_skip);
+                                  &p->tcp_options[opt_count], &byte_skip, false);
             break;
         }
 
@@ -6058,6 +6072,7 @@ void DecodeIPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
     uint8_t opt_count = 0; /* what option are we processing right now */
     uint8_t byte_skip;
     const uint8_t *len_ptr;
+    bool check = true;
     int code = 0;  /* negative error codes are returned from bad options */
 
 
@@ -6091,27 +6106,33 @@ void DecodeIPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
             break;
         default:
             /* handle all the dynamic features */
+        	if (p->pkth->priv_ptr != NULL)
+        		check = false;
+
             code = OptLenValidate(option_ptr, end_ptr, len_ptr, -1,
-                                  &p->ip_options[opt_count], &byte_skip);
+                                  &p->ip_options[opt_count], &byte_skip, check);
         }
 
-        if(code < 0)
+        if (p->pkth->priv_ptr == NULL)
         {
-            /* Yes, we use TCP_OPT_* for the IP option decoder.
-            */
-            if(code == TCP_OPT_BADLEN)
-            {
-                DecoderOptEvent(p, DECODE_IPV4OPT_BADLEN,
-                                DECODE_IPV4OPT_BADLEN_STR, 1, 1,
-                                execIpOptDrop);
-            }
-            else if(code == TCP_OPT_TRUNC)
-            {
-                DecoderOptEvent(p, DECODE_IPV4OPT_TRUNCATED,
-                                DECODE_IPV4OPT_TRUNCATED_STR, 1, 1,
-                                execIpOptDrop);
-            }
-            return;
+			if(code < 0)
+			{
+				/* Yes, we use TCP_OPT_* for the IP option decoder.
+				*/
+				if(code == TCP_OPT_BADLEN)
+				{
+					DecoderOptEvent(p, DECODE_IPV4OPT_BADLEN,
+									DECODE_IPV4OPT_BADLEN_STR, 1, 1,
+									execIpOptDrop);
+				}
+				else if(code == TCP_OPT_TRUNC)
+				{
+					DecoderOptEvent(p, DECODE_IPV4OPT_TRUNCATED,
+									DECODE_IPV4OPT_TRUNCATED_STR, 1, 1,
+									execIpOptDrop);
+				}
+				return;
+			}
         }
 
         if(!done)
